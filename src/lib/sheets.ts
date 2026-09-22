@@ -10,6 +10,23 @@ const COLOR_DATOS = { red: 1, green: 1, blue: 1 };
 const COLOR_SEPARADOR = { red: 0.82, green: 0.89, blue: 0.87 };
 const COLOR_TOTAL_MES = { red: 0.96, green: 0.65, blue: 0.14 }; // ambar, bien llamativo
 
+// Paleta de fondos pastel para las filas de datos: cada mes calendario usa
+// un color distinto (ciclico), asi se distinguen los bloques de un vistazo.
+const PALETA_MESES = [
+  { red: 1, green: 1, blue: 1 }, // blanco
+  { red: 0.93, green: 0.97, blue: 0.91 }, // verde clarito
+  { red: 0.91, green: 0.95, blue: 0.99 }, // azul clarito
+  { red: 1, green: 0.97, blue: 0.88 }, // amarillo clarito
+  { red: 0.99, green: 0.9, blue: 0.94 }, // rosa clarito
+  { red: 0.93, green: 0.91, blue: 0.98 }, // violeta clarito
+];
+
+function colorDelMes(fechaISO: string): { red: number; green: number; blue: number } {
+  const [anio, mes] = fechaISO.split("-").map(Number);
+  const indice = (anio * 12 + (mes - 1)) % PALETA_MESES.length;
+  return PALETA_MESES[indice];
+}
+
 async function getSheetsClient() {
   const auth = new google.auth.JWT({
     email: env.GOOGLE_SERVICE_ACCOUNT_EMAIL(),
@@ -174,7 +191,8 @@ async function formatearFilaDeGasto(
   sheetsClient: SheetsClient,
   spreadsheetId: string,
   sheetId: number,
-  numeroFila: number
+  numeroFila: number,
+  colorFondo: { red: number; green: number; blue: number } = COLOR_DATOS
 ) {
   const filaIndex0 = numeroFila - 1;
   await sheetsClient.spreadsheets.batchUpdate({
@@ -182,13 +200,14 @@ async function formatearFilaDeGasto(
     requestBody: {
       requests: [
         // Reset de fondo/texto: una fila nueva hereda el formato de la fila
-        // de arriba (encabezado o separador), hay que devolverla a la normal.
+        // de arriba (encabezado o separador), hay que devolverla a la normal
+        // (con el color que le corresponde a su mes).
         {
           repeatCell: {
             range: { sheetId, startRowIndex: filaIndex0, endRowIndex: filaIndex0 + 1, startColumnIndex: 0, endColumnIndex: 5 },
             cell: {
               userEnteredFormat: {
-                backgroundColor: COLOR_DATOS,
+                backgroundColor: colorFondo,
                 textFormat: { bold: false, italic: false, foregroundColor: { red: 0, green: 0, blue: 0 } },
                 horizontalAlignment: "LEFT",
               },
@@ -228,91 +247,130 @@ function formatearPesosPlano(monto: number): string {
   return `$${monto.toLocaleString("es-AR", { maximumFractionDigits: 0 })}`;
 }
 
-// Crea la fila separadora de un mes nuevo. Si `mesQueTermina` viene con
-// datos, ademas escribe el total de ESE mes (el que acaba de terminar) en
-// la columna G de la misma fila, bien destacado: es la fila que marca justo
-// el limite entre un mes y el siguiente.
+// Crea la fila separadora de un mes nuevo (sin total: recien empieza, no se
+// sabe cuanto se va a gastar todavia).
 async function agregarSeparadorDeMes(
   sheetsClient: SheetsClient,
   spreadsheetId: string,
   sheetId: number,
-  fechaISO: string,
-  mesQueTermina: { etiqueta: string; total: number } | null
-) {
+  fechaISO: string
+): Promise<number | null> {
   const [anioStr, mesStr] = fechaISO.split("-");
   const etiqueta = `${nombreMes(Number(mesStr))} ${anioStr}`;
 
-  const valores = mesQueTermina
-    ? [etiqueta, "", "", "", "", `Total ${mesQueTermina.etiqueta}: ${formatearPesosPlano(mesQueTermina.total)}`]
-    : [etiqueta, "", "", "", ""];
-
   const appendRes = await sheetsClient.spreadsheets.values.append({
     spreadsheetId,
-    range: `${SHEET_NAME}!A:G`,
+    range: `${SHEET_NAME}!A:E`,
     valueInputOption: "RAW", // evita que Sheets interprete la etiqueta como fecha
     insertDataOption: "INSERT_ROWS",
-    requestBody: { values: [valores] },
+    requestBody: { values: [[etiqueta, "", "", "", ""]] },
   });
 
   const numeroFila = primeraFilaDeRango(appendRes.data.updates?.updatedRange);
-  if (numeroFila == null) return;
+  if (numeroFila == null) return null;
   const filaIndex0 = numeroFila - 1;
 
-  const requests: object[] = [
-    {
-      mergeCells: {
-        range: { sheetId, startRowIndex: filaIndex0, endRowIndex: filaIndex0 + 1, startColumnIndex: 0, endColumnIndex: 5 },
-        mergeType: "MERGE_ALL",
-      },
-    },
-    {
-      repeatCell: {
-        range: { sheetId, startRowIndex: filaIndex0, endRowIndex: filaIndex0 + 1, startColumnIndex: 0, endColumnIndex: 5 },
-        cell: {
-          userEnteredFormat: {
-            backgroundColor: COLOR_SEPARADOR,
-            textFormat: { bold: true, italic: true, foregroundColor: { red: 0.1, green: 0.2, blue: 0.18 } },
-            horizontalAlignment: "CENTER",
-            numberFormat: { type: "TEXT" },
+  await sheetsClient.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [
+        {
+          mergeCells: {
+            range: { sheetId, startRowIndex: filaIndex0, endRowIndex: filaIndex0 + 1, startColumnIndex: 0, endColumnIndex: 5 },
+            mergeType: "MERGE_ALL",
           },
         },
-        fields: "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,numberFormat)",
-      },
-    },
-  ];
-
-  if (mesQueTermina) {
-    requests.push(
-      {
-        mergeCells: {
-          range: { sheetId, startRowIndex: filaIndex0, endRowIndex: filaIndex0 + 1, startColumnIndex: 6, endColumnIndex: 8 },
-          mergeType: "MERGE_ALL",
-        },
-      },
-      {
-        repeatCell: {
-          range: { sheetId, startRowIndex: filaIndex0, endRowIndex: filaIndex0 + 1, startColumnIndex: 6, endColumnIndex: 8 },
-          cell: {
-            userEnteredFormat: {
-              backgroundColor: COLOR_TOTAL_MES,
-              textFormat: { bold: true, foregroundColor: { red: 0.25, green: 0.13, blue: 0 } },
-              horizontalAlignment: "CENTER",
-              numberFormat: { type: "TEXT" },
-              borders: {
-                top: { style: "SOLID", width: 2, color: { red: 0.6, green: 0.4, blue: 0 } },
-                bottom: { style: "SOLID", width: 2, color: { red: 0.6, green: 0.4, blue: 0 } },
-                left: { style: "SOLID", width: 2, color: { red: 0.6, green: 0.4, blue: 0 } },
-                right: { style: "SOLID", width: 2, color: { red: 0.6, green: 0.4, blue: 0 } },
+        {
+          repeatCell: {
+            range: { sheetId, startRowIndex: filaIndex0, endRowIndex: filaIndex0 + 1, startColumnIndex: 0, endColumnIndex: 5 },
+            cell: {
+              userEnteredFormat: {
+                backgroundColor: COLOR_SEPARADOR,
+                textFormat: { bold: true, italic: true, foregroundColor: { red: 0.1, green: 0.2, blue: 0.18 } },
+                horizontalAlignment: "CENTER",
+                numberFormat: { type: "TEXT" },
               },
             },
+            fields: "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,numberFormat)",
           },
-          fields: "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,numberFormat,borders)",
         },
-      }
-    );
-  }
+      ],
+    },
+  });
 
-  await sheetsClient.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests } });
+  return numeroFila;
+}
+
+// Escribe el total de un mes al lado del titulo de SU PROPIO separador
+// (columna G, con F como espacio en blanco), bien destacado en ambar. Se
+// llama cuando ese mes termina (arranca el siguiente), buscando la fila del
+// separador que ya existe con la etiqueta de ese mes.
+async function escribirTotalEnSeparador(
+  sheetsClient: SheetsClient,
+  spreadsheetId: string,
+  sheetId: number,
+  etiquetaMes: string,
+  total: number
+) {
+  const res = await sheetsClient.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${SHEET_NAME}!A2:A`,
+    valueRenderOption: "UNFORMATTED_VALUE",
+  });
+  const filas = res.data.values ?? [];
+  let indice = -1;
+  for (let i = filas.length - 1; i >= 0; i--) {
+    if (filas[i]?.[0] === etiquetaMes) {
+      indice = i;
+      break;
+    }
+  }
+  if (indice === -1) return;
+
+  const numeroFila = indice + 2;
+  const filaIndex0 = numeroFila - 1;
+  const texto = `Total: ${formatearPesosPlano(total)}`;
+
+  await sheetsClient.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${SHEET_NAME}!G${numeroFila}`,
+    valueInputOption: "RAW",
+    requestBody: { values: [[texto]] },
+  });
+
+  await sheetsClient.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [
+        {
+          mergeCells: {
+            range: { sheetId, startRowIndex: filaIndex0, endRowIndex: filaIndex0 + 1, startColumnIndex: 6, endColumnIndex: 8 },
+            mergeType: "MERGE_ALL",
+          },
+        },
+        {
+          repeatCell: {
+            range: { sheetId, startRowIndex: filaIndex0, endRowIndex: filaIndex0 + 1, startColumnIndex: 6, endColumnIndex: 8 },
+            cell: {
+              userEnteredFormat: {
+                backgroundColor: COLOR_TOTAL_MES,
+                textFormat: { bold: true, foregroundColor: { red: 0.25, green: 0.13, blue: 0 } },
+                horizontalAlignment: "CENTER",
+                numberFormat: { type: "TEXT" },
+                borders: {
+                  top: { style: "SOLID", width: 2, color: { red: 0.6, green: 0.4, blue: 0 } },
+                  bottom: { style: "SOLID", width: 2, color: { red: 0.6, green: 0.4, blue: 0 } },
+                  left: { style: "SOLID", width: 2, color: { red: 0.6, green: 0.4, blue: 0 } },
+                  right: { style: "SOLID", width: 2, color: { red: 0.6, green: 0.4, blue: 0 } },
+                },
+              },
+            },
+            fields: "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,numberFormat,borders)",
+          },
+        },
+      ],
+    },
+  });
 }
 
 // Indices (dentro de `filas`, un array que arranca en la fila 2 de la hoja)
@@ -388,9 +446,12 @@ async function agregarUnGasto(
   const mesDelGasto = gasto.fecha.slice(0, 7);
   const { ultimoMes, totalUltimoMes, ultimoId } = await obtenerUltimoMesYUltimoId(sheetsClient, spreadsheetId);
   if (ultimoMes !== mesDelGasto) {
-    const [anioAnt, mesAnt] = ultimoMes ? ultimoMes.split("-") : [null, null];
-    const mesQueTermina = ultimoMes ? { etiqueta: `${nombreMes(Number(mesAnt))} ${anioAnt}`, total: totalUltimoMes } : null;
-    await agregarSeparadorDeMes(sheetsClient, spreadsheetId, sheetId, gasto.fecha, mesQueTermina);
+    if (ultimoMes) {
+      const [anioAnt, mesAnt] = ultimoMes.split("-");
+      const etiquetaAnt = `${nombreMes(Number(mesAnt))} ${anioAnt}`;
+      await escribirTotalEnSeparador(sheetsClient, spreadsheetId, sheetId, etiquetaAnt, totalUltimoMes);
+    }
+    await agregarSeparadorDeMes(sheetsClient, spreadsheetId, sheetId, gasto.fecha);
   }
 
   const id = ultimoId + 1;
@@ -404,7 +465,7 @@ async function agregarUnGasto(
 
   const numeroFila = primeraFilaDeRango(appendRes.data.updates?.updatedRange);
   if (numeroFila != null) {
-    await formatearFilaDeGasto(sheetsClient, spreadsheetId, sheetId, numeroFila);
+    await formatearFilaDeGasto(sheetsClient, spreadsheetId, sheetId, numeroFila, colorDelMes(gasto.fecha));
   }
 
   return { id, fecha: new Date(`${gasto.fecha}T00:00:00Z`), categoria: gasto.categoria, descripcion: gasto.descripcion, monto: gasto.monto };
@@ -661,7 +722,7 @@ export async function editarUltimoGasto(cambios: CambiosGasto): Promise<FilaGast
   });
 
   const sheetId = await obtenerSheetId(sheetsClient, spreadsheetId);
-  await formatearFilaDeGasto(sheetsClient, spreadsheetId, sheetId, numeroFila);
+  await formatearFilaDeGasto(sheetsClient, spreadsheetId, sheetId, numeroFila, colorDelMes(resultado.fecha.toISOString().slice(0, 10)));
 
   return resultado;
 }
@@ -695,8 +756,15 @@ export async function editarGastosPorIds(ids: number[], cambios: CambiosGasto): 
     requestBody: { valueInputOption: "USER_ENTERED", data: requestsDeValores },
   });
 
-  for (const indice of indices) {
-    await formatearFilaDeGasto(sheetsClient, spreadsheetId, sheetId, indice + 2);
+  for (let i = 0; i < indices.length; i++) {
+    const resultado = resultados[i];
+    await formatearFilaDeGasto(
+      sheetsClient,
+      spreadsheetId,
+      sheetId,
+      indices[i] + 2,
+      colorDelMes(resultado.fecha.toISOString().slice(0, 10))
+    );
   }
 
   return resultados;
