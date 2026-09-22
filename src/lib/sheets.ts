@@ -191,3 +191,81 @@ export async function leerGastos(): Promise<FilaGasto[]> {
       monto: Number(fila[3]) || 0,
     }));
 }
+
+export async function borrarUltimoGasto(): Promise<FilaGasto | null> {
+  const sheetsClient = await getSheetsClient();
+  const spreadsheetId = env.GOOGLE_SHEET_ID();
+  const res = await sheetsClient.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${SHEET_NAME}!A2:D`,
+    valueRenderOption: "UNFORMATTED_VALUE",
+  });
+  const filas = res.data.values ?? [];
+  if (filas.length === 0) return null;
+
+  const ultimaFilaIndex = filas.length; // fila 1 = encabezado, fila 2 = filas[0], etc.
+  const ultima = filas[filas.length - 1];
+  const sheetId = await obtenerSheetId(sheetsClient, spreadsheetId);
+
+  await sheetsClient.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [
+        {
+          deleteDimension: {
+            range: {
+              sheetId,
+              dimension: "ROWS",
+              startIndex: ultimaFilaIndex, // 0-indexed: fila (ultimaFilaIndex+1) 1-indexed
+              endIndex: ultimaFilaIndex + 1,
+            },
+          },
+        },
+      ],
+    },
+  });
+
+  return {
+    fecha: fechaDesdeSerialDeSheets(Number(ultima[0])),
+    categoria: String(ultima[1] ?? ""),
+    descripcion: String(ultima[2] ?? ""),
+    monto: Number(ultima[3]) || 0,
+  };
+}
+
+export type CambiosGasto = Partial<Pick<NuevoGasto, "fecha" | "monto" | "categoria" | "descripcion">>;
+
+export async function editarUltimoGasto(cambios: CambiosGasto): Promise<FilaGasto | null> {
+  const sheetsClient = await getSheetsClient();
+  const spreadsheetId = env.GOOGLE_SHEET_ID();
+  const res = await sheetsClient.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${SHEET_NAME}!A2:D`,
+    valueRenderOption: "UNFORMATTED_VALUE",
+  });
+  const filas = res.data.values ?? [];
+  if (filas.length === 0) return null;
+
+  const ultima = filas[filas.length - 1];
+  const numeroFila = filas.length + 1; // fila 1 = encabezado, fila 2 = filas[0], etc. (1-indexed)
+
+  const fechaActual = fechaDesdeSerialDeSheets(Number(ultima[0])).toISOString().slice(0, 10);
+  const fechaFinal = cambios.fecha ?? fechaActual;
+  const categoriaFinal = cambios.categoria ?? String(ultima[1] ?? "");
+  const descripcionFinal = cambios.descripcion ?? String(ultima[2] ?? "");
+  const montoFinal = cambios.monto ?? (Number(ultima[3]) || 0);
+
+  await sheetsClient.spreadsheets.values.update({
+    spreadsheetId,
+    range: `${SHEET_NAME}!A${numeroFila}:D${numeroFila}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[fechaFinal, categoriaFinal, descripcionFinal, montoFinal]] },
+  });
+
+  return {
+    fecha: new Date(`${fechaFinal}T00:00:00Z`),
+    categoria: categoriaFinal,
+    descripcion: descripcionFinal,
+    monto: montoFinal,
+  };
+}

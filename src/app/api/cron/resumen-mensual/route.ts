@@ -1,20 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
-import { calcularResumenMensual, textoResumen, urlGraficoTorta, nombreMes } from "@/lib/resumen";
+import { calcularResumen, textoResumen, urlGraficoTorta, tituloPeriodo } from "@/lib/resumen";
 import { enviarMensajeTexto, enviarImagen } from "@/lib/whatsapp";
-
-const ZONA_HORARIA = "America/Argentina/Buenos_Aires";
-
-function fechaEnArgentina(fecha: Date): { anio: number; mes: number; dia: number } {
-  const formateador = new Intl.DateTimeFormat("en-CA", {
-    timeZone: ZONA_HORARIA,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  const [anio, mes, dia] = formateador.format(fecha).split("-").map(Number);
-  return { anio, mes, dia };
-}
+import { hoyEnArgentina } from "@/lib/fechaArgentina";
 
 // Vercel Cron llama a este endpoint una vez por dia (ver vercel.json). Si el
 // dia de hoy (en horario argentino) es el ultimo del mes, manda el resumen
@@ -26,8 +14,8 @@ export async function GET(request: NextRequest) {
   }
 
   const ahora = new Date();
-  const hoy = fechaEnArgentina(ahora);
-  const manana = fechaEnArgentina(new Date(ahora.getTime() + 24 * 60 * 60 * 1000));
+  const hoy = hoyEnArgentina(ahora);
+  const manana = hoyEnArgentina(new Date(ahora.getTime() + 24 * 60 * 60 * 1000));
   const esUltimoDiaDelMes = manana.mes !== hoy.mes;
 
   if (!esUltimoDiaDelMes) {
@@ -35,11 +23,12 @@ export async function GET(request: NextRequest) {
   }
 
   const numero = env.WHATSAPP_OWNER_NUMBER();
-  const resumen = await calcularResumenMensual(hoy.mes, hoy.anio);
+  const referencia = new Date(Date.UTC(hoy.anio, hoy.mes - 1, hoy.dia));
+  const resumen = await calcularResumen("mes", referencia);
   await enviarMensajeTexto(numero, textoResumen(resumen));
   const grafico = urlGraficoTorta(resumen);
   if (grafico) {
-    await enviarImagen(numero, grafico, `Gastos de ${nombreMes(hoy.mes)} ${hoy.anio}`);
+    await enviarImagen(numero, grafico, `Gastos de ${tituloPeriodo(resumen)}`);
   }
 
   return NextResponse.json({ ok: true, enviado: true });

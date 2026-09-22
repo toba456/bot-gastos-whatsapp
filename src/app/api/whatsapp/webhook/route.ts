@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
-import { agregarGasto } from "@/lib/sheets";
+import { agregarGasto, borrarUltimoGasto, editarUltimoGasto } from "@/lib/sheets";
 import {
   extraerMensajesDeTexto,
   enviarMensajeTexto,
@@ -8,7 +8,8 @@ import {
   type WhatsAppWebhookPayload,
 } from "@/lib/whatsapp";
 import { interpretarMensaje } from "@/lib/interpretarMensaje";
-import { calcularResumenMensual, textoResumen, urlGraficoTorta, nombreMes } from "@/lib/resumen";
+import { calcularResumen, textoResumen, urlGraficoTorta, tituloPeriodo, type Periodo } from "@/lib/resumen";
+import { hoyISOEnArgentina } from "@/lib/fechaArgentina";
 
 // Verificacion del webhook (Meta la llama una vez al configurar la URL).
 export function GET(request: NextRequest) {
@@ -23,12 +24,12 @@ export function GET(request: NextRequest) {
   return new NextResponse("Verificacion fallida", { status: 403 });
 }
 
-async function responderConResumen(mes: number, anio: number) {
-  const resumen = await calcularResumenMensual(mes, anio);
+async function responderConResumen(periodo: Periodo, referencia: Date) {
+  const resumen = await calcularResumen(periodo, referencia);
   await enviarMensajeTexto(env.WHATSAPP_OWNER_NUMBER(), textoResumen(resumen));
   const grafico = urlGraficoTorta(resumen);
   if (grafico) {
-    await enviarImagen(env.WHATSAPP_OWNER_NUMBER(), grafico, `Gastos de ${nombreMes(mes)} ${anio}`);
+    await enviarImagen(env.WHATSAPP_OWNER_NUMBER(), grafico, `Gastos de ${tituloPeriodo(resumen)}`);
   }
 }
 
@@ -55,11 +56,40 @@ export async function POST(request: NextRequest) {
           env.WHATSAPP_OWNER_NUMBER(),
           `Guardado ✅\n${interpretado.categoria} — $${interpretado.monto}\n${interpretado.descripcion} (${interpretado.fecha})`
         );
+      } else if (interpretado.tipo === "resumen") {
+        const referencia = interpretado.fecha
+          ? new Date(`${interpretado.fecha}T00:00:00Z`)
+          : new Date(`${hoyISOEnArgentina()}T00:00:00Z`);
+        await responderConResumen(interpretado.periodo, referencia);
+      } else if (interpretado.tipo === "borrar") {
+        const borrado = await borrarUltimoGasto();
+        if (borrado) {
+          await enviarMensajeTexto(
+            env.WHATSAPP_OWNER_NUMBER(),
+            `Borrado 🗑️\n${borrado.categoria} — $${borrado.monto}\n${borrado.descripcion}`
+          );
+        } else {
+          await enviarMensajeTexto(env.WHATSAPP_OWNER_NUMBER(), "No hay ningún gasto cargado para borrar.");
+        }
+      } else if (interpretado.tipo === "editar") {
+        const actualizado = await editarUltimoGasto({
+          monto: interpretado.monto ?? undefined,
+          categoria: interpretado.categoria ?? undefined,
+          descripcion: interpretado.descripcion ?? undefined,
+        });
+        if (actualizado) {
+          await enviarMensajeTexto(
+            env.WHATSAPP_OWNER_NUMBER(),
+            `Actualizado ✏️\n${actualizado.categoria} — $${actualizado.monto}\n${actualizado.descripcion}`
+          );
+        } else {
+          await enviarMensajeTexto(env.WHATSAPP_OWNER_NUMBER(), "No hay ningún gasto cargado para editar.");
+        }
       } else {
-        const ahora = new Date();
-        const mes = interpretado.mes ?? ahora.getMonth() + 1;
-        const anio = interpretado.anio ?? ahora.getFullYear();
-        await responderConResumen(mes, anio);
+        await enviarMensajeTexto(
+          env.WHATSAPP_OWNER_NUMBER(),
+          "No te entendí. Para cargar un gasto probá algo como 'gasté 5000 en el super'; para un resumen, 'resumen de este mes'; para borrar el último gasto, 'borrá el último gasto'; para corregirlo, 'en realidad fueron 4000'."
+        );
       }
     } catch (error) {
       console.error("Error procesando mensaje de WhatsApp", error);
