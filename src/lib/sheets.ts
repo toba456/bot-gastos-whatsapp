@@ -145,3 +145,49 @@ export async function agregarGasto(gasto: NuevoGasto): Promise<void> {
     },
   });
 }
+
+export async function agregarGastos(gastos: NuevoGasto[]): Promise<void> {
+  if (gastos.length === 0) return;
+  const sheetsClient = await getSheetsClient();
+  await ensureHeader(sheetsClient);
+  await sheetsClient.spreadsheets.values.append({
+    spreadsheetId: env.GOOGLE_SHEET_ID(),
+    range: `${SHEET_NAME}!A:D`,
+    valueInputOption: "USER_ENTERED",
+    insertDataOption: "INSERT_ROWS",
+    requestBody: {
+      values: gastos.map((g) => [g.fecha, g.categoria, g.descripcion, g.monto]),
+    },
+  });
+}
+
+export type FilaGasto = {
+  fecha: Date;
+  categoria: string;
+  descripcion: string;
+  monto: number;
+};
+
+// Los valores de fecha en Sheets son un numero serial de dias desde el
+// 30/12/1899 (epoch de Sheets/Excel). Lo convertimos a Date en UTC.
+function fechaDesdeSerialDeSheets(serial: number): Date {
+  return new Date(Date.UTC(1899, 11, 30) + serial * 86400000);
+}
+
+export async function leerGastos(): Promise<FilaGasto[]> {
+  const sheetsClient = await getSheetsClient();
+  const res = await sheetsClient.spreadsheets.values.get({
+    spreadsheetId: env.GOOGLE_SHEET_ID(),
+    range: `${SHEET_NAME}!A2:D`,
+    valueRenderOption: "UNFORMATTED_VALUE",
+  });
+  const filas = res.data.values ?? [];
+  return filas
+    .filter((fila) => fila[0] != null && fila[0] !== "")
+    .map((fila) => ({
+      fecha: fechaDesdeSerialDeSheets(Number(fila[0])),
+      categoria: String(fila[1] ?? ""),
+      descripcion: String(fila[2] ?? ""),
+      monto: Number(fila[3]) || 0,
+    }));
+}

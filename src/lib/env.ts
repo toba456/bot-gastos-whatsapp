@@ -14,4 +14,6 @@ export const env = {
   GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: () =>
     required("GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY").replace(/\\n/g, "\n"),
   GOOGLE_SHEET_ID: () => required("GOOGLE_SHEET_ID"),
+  WHATSAPP_OWNER_NUMBER: () => required("WHATSAPP_OWNER_NUMBER"),
+  CRON_SECRET: () => required("CRON_SECRET"),
 };

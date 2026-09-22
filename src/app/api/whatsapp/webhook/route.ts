@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
 import { agregarGasto } from "@/lib/sheets";
-import { extraerMensajesDeTexto, enviarMensajeTexto, type WhatsAppWebhookPayload } from "@/lib/whatsapp";
-import { interpretarGastoDeTexto } from "@/lib/parseGasto";
+import {
+  extraerMensajesDeTexto,
+  enviarMensajeTexto,
+  enviarImagen,
+  type WhatsAppWebhookPayload,
+} from "@/lib/whatsapp";
+import { interpretarMensaje } from "@/lib/interpretarMensaje";
+import { calcularResumenMensual, textoResumen, urlGraficoTorta, nombreMes } from "@/lib/resumen";
 
 // Verificacion del webhook (Meta la llama una vez al configurar la URL).
 export function GET(request: NextRequest) {
@@ -17,6 +23,15 @@ export function GET(request: NextRequest) {
   return new NextResponse("Verificacion fallida", { status: 403 });
 }
 
+async function responderConResumen(from: string, mes: number, anio: number) {
+  const resumen = await calcularResumenMensual(mes, anio);
+  await enviarMensajeTexto(from, textoResumen(resumen));
+  const grafico = urlGraficoTorta(resumen);
+  if (grafico) {
+    await enviarImagen(from, grafico, `Gastos de ${nombreMes(mes)} ${anio}`);
+  }
+}
+
 // Recepcion de mensajes entrantes.
 export async function POST(request: NextRequest) {
   const payload = (await request.json()) as WhatsAppWebhookPayload;
@@ -24,22 +39,30 @@ export async function POST(request: NextRequest) {
 
   for (const { from, texto } of mensajes) {
     try {
-      const gasto = await interpretarGastoDeTexto(texto);
-      await agregarGasto({
-        fecha: gasto.fecha,
-        monto: gasto.monto,
-        categoria: gasto.categoria,
-        descripcion: gasto.descripcion,
-      });
-      await enviarMensajeTexto(
-        from,
-        `Guardado ✅\n${gasto.categoria} — $${gasto.monto}\n${gasto.descripcion} (${gasto.fecha})`
-      );
+      const interpretado = await interpretarMensaje(texto);
+
+      if (interpretado.tipo === "gasto") {
+        await agregarGasto({
+          fecha: interpretado.fecha,
+          monto: interpretado.monto,
+          categoria: interpretado.categoria,
+          descripcion: interpretado.descripcion,
+        });
+        await enviarMensajeTexto(
+          from,
+          `Guardado ✅\n${interpretado.categoria} — $${interpretado.monto}\n${interpretado.descripcion} (${interpretado.fecha})`
+        );
+      } else {
+        const ahora = new Date();
+        const mes = interpretado.mes ?? ahora.getMonth() + 1;
+        const anio = interpretado.anio ?? ahora.getFullYear();
+        await responderConResumen(from, mes, anio);
+      }
     } catch (error) {
       console.error("Error procesando mensaje de WhatsApp", error);
       await enviarMensajeTexto(
         from,
-        "No pude interpretar ese gasto. ¿Podés reformularlo? Ej: 'gasté 5000 en el super'"
+        "No pude procesar ese mensaje. Si es un gasto probá algo como 'gasté 5000 en el super'; si querés un resumen probá 'resumen de este mes'."
       ).catch(() => {});
     }
   }

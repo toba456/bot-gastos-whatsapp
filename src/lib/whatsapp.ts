@@ -23,6 +23,27 @@ export async function enviarMensajeTexto(numeroDestino: string, texto: string): 
   }
 }
 
+export async function enviarImagen(numeroDestino: string, urlImagen: string, caption?: string): Promise<void> {
+  const url = `https://graph.facebook.com/${GRAPH_API_VERSION}/${env.WHATSAPP_PHONE_NUMBER_ID()}/messages`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.WHATSAPP_ACCESS_TOKEN()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: numeroDestino,
+      type: "image",
+      image: { link: urlImagen, caption },
+    }),
+  });
+  if (!res.ok) {
+    const detalle = await res.text();
+    throw new Error(`Error enviando imagen de WhatsApp (${res.status}): ${detalle}`);
+  }
+}
+
 // Tipos minimos del payload del webhook de WhatsApp Cloud API.
 // Referencia: https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks/payload-examples
 export type WhatsAppWebhookPayload = {
