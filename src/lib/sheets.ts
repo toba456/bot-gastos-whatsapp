@@ -2,7 +2,7 @@ import { google } from "googleapis";
 import { env } from "@/lib/env";
 
 const SHEET_NAME = "Gastos";
-const HEADER = ["Fecha", "Monto", "Categoria", "Descripcion", "Origen", "Numero"];
+const HEADER = ["Fecha", "Categoria", "Descripcion", "Monto"];
 
 async function getSheetsClient() {
   const auth = new google.auth.JWT({
@@ -18,8 +18,6 @@ export type NuevoGasto = {
   monto: number;
   categoria: string;
   descripcion: string;
-  origen: "texto" | "audio" | "imagen" | "mercado_pago";
-  numero: string; // numero de WhatsApp de origen
 };
 
 export async function formatearPlanillaExistente(): Promise<void> {
@@ -73,6 +71,14 @@ async function formatearHoja(
             fields: "gridProperties.frozenRowCount",
           },
         },
+        // Limpiar cualquier formato numerico previo en Categoria/Descripcion.
+        {
+          repeatCell: {
+            range: { sheetId, startRowIndex: 1, startColumnIndex: 1, endColumnIndex: 3 },
+            cell: { userEnteredFormat: { numberFormat: { type: "TEXT" } } },
+            fields: "userEnteredFormat.numberFormat",
+          },
+        },
         // Formato de fecha en la columna A.
         {
           repeatCell: {
@@ -81,10 +87,10 @@ async function formatearHoja(
             fields: "userEnteredFormat.numberFormat",
           },
         },
-        // Formato de moneda en la columna B (Monto).
+        // Formato de moneda en la columna D (Monto).
         {
           repeatCell: {
-            range: { sheetId, startRowIndex: 1, startColumnIndex: 1, endColumnIndex: 2 },
+            range: { sheetId, startRowIndex: 1, startColumnIndex: 3, endColumnIndex: 4 },
             cell: { userEnteredFormat: { numberFormat: { type: "CURRENCY", pattern: '$#,##0' } } },
             fields: "userEnteredFormat.numberFormat",
           },
@@ -112,12 +118,12 @@ async function ensureHeader(sheetsClient: Awaited<ReturnType<typeof getSheetsCli
   const spreadsheetId = env.GOOGLE_SHEET_ID();
   const res = await sheetsClient.spreadsheets.values.get({
     spreadsheetId,
-    range: `${SHEET_NAME}!A1:F1`,
+    range: `${SHEET_NAME}!A1:D1`,
   });
   if (!res.data.values || res.data.values.length === 0) {
     await sheetsClient.spreadsheets.values.update({
       spreadsheetId,
-      range: `${SHEET_NAME}!A1:F1`,
+      range: `${SHEET_NAME}!A1:D1`,
       valueInputOption: "RAW",
       requestBody: { values: [HEADER] },
     });
@@ -131,20 +137,11 @@ export async function agregarGasto(gasto: NuevoGasto): Promise<void> {
   await ensureHeader(sheetsClient);
   await sheetsClient.spreadsheets.values.append({
     spreadsheetId: env.GOOGLE_SHEET_ID(),
-    range: `${SHEET_NAME}!A:F`,
+    range: `${SHEET_NAME}!A:D`,
     valueInputOption: "USER_ENTERED",
     insertDataOption: "INSERT_ROWS",
     requestBody: {
-      values: [
-        [
-          gasto.fecha,
-          gasto.monto,
-          gasto.categoria,
-          gasto.descripcion,
-          gasto.origen,
-          gasto.numero,
-        ],
-      ],
+      values: [[gasto.fecha, gasto.categoria, gasto.descripcion, gasto.monto]],
     },
   });
 }

@@ -30,8 +30,6 @@ export async function POST(request: NextRequest) {
         monto: gasto.monto,
         categoria: gasto.categoria,
         descripcion: gasto.descripcion,
-        origen: "texto",
-        numero: from,
       });
       await enviarMensajeTexto(
         from,
