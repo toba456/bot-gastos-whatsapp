@@ -340,7 +340,50 @@ export async function leerGastos(): Promise<FilaGasto[]> {
     }));
 }
 
-export async function borrarUltimoGasto(): Promise<FilaGasto | null> {
+// Indices (dentro de `filas`, un array que arranca en la fila 2 de la hoja)
+// de las filas que son gastos reales, ignorando separadores de mes.
+function indicesDeGastos(filas: unknown[][]): number[] {
+  const indices: number[] = [];
+  filas.forEach((fila, i) => {
+    if (typeof fila[0] === "number") indices.push(i);
+  });
+  return indices;
+}
+
+function filaAGasto(fila: unknown[]): FilaGasto {
+  return {
+    fecha: fechaDesdeSerialDeSheets(Number(fila[0])),
+    categoria: String(fila[1] ?? ""),
+    descripcion: String(fila[2] ?? ""),
+    monto: Number(fila[3]) || 0,
+  };
+}
+
+export async function contarGastos(): Promise<number> {
+  const gastos = await leerGastos();
+  return gastos.length;
+}
+
+// Solo consulta, no borra nada: para mostrarle al usuario que se va a borrar
+// antes de pedir confirmacion.
+export async function previsualizarUltimos(cantidad: number): Promise<FilaGasto[]> {
+  const gastos = await leerGastos();
+  return gastos.slice(-cantidad);
+}
+
+export async function previsualizarCoincidencia(texto: string): Promise<FilaGasto | null> {
+  const gastos = await leerGastos();
+  const textoLower = texto.toLowerCase();
+  for (let i = gastos.length - 1; i >= 0; i--) {
+    const g = gastos[i];
+    if (g.categoria.toLowerCase().includes(textoLower) || g.descripcion.toLowerCase().includes(textoLower)) {
+      return g;
+    }
+  }
+  return null;
+}
+
+export async function borrarUltimosGastos(cantidad: number): Promise<FilaGasto[]> {
   const sheetsClient = await getSheetsClient();
   const spreadsheetId = env.GOOGLE_SHEET_ID();
   const res = await sheetsClient.spreadsheets.values.get({
@@ -349,41 +392,86 @@ export async function borrarUltimoGasto(): Promise<FilaGasto | null> {
     valueRenderOption: "UNFORMATTED_VALUE",
   });
   const filas = res.data.values ?? [];
-  // Buscamos la ultima fila que sea un gasto real (no un separador de mes).
-  let indice = filas.length - 1;
-  while (indice >= 0 && typeof filas[indice]?.[0] !== "number") {
-    indice--;
-  }
-  if (indice < 0) return null;
+  const aBorrar = indicesDeGastos(filas).slice(-cantidad);
+  if (aBorrar.length === 0) return [];
 
-  const ultima = filas[indice];
-  const numeroFilaEnHoja = indice + 2; // fila 1 = encabezado, filas[0] = fila 2, etc.
+  const sheetId = await obtenerSheetId(sheetsClient, spreadsheetId);
+  const requests = aBorrar
+    .slice()
+    .sort((a, b) => b - a) // de abajo hacia arriba, para no correr los indices restantes
+    .map((i) => ({
+      deleteDimension: {
+        range: { sheetId, dimension: "ROWS" as const, startIndex: i + 1, endIndex: i + 2 },
+      },
+    }));
+  await sheetsClient.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests } });
+
+  return aBorrar.map((i) => filaAGasto(filas[i]));
+}
+
+export async function borrarGastoPorTexto(texto: string): Promise<FilaGasto | null> {
+  const sheetsClient = await getSheetsClient();
+  const spreadsheetId = env.GOOGLE_SHEET_ID();
+  const res = await sheetsClient.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${SHEET_NAME}!A2:D`,
+    valueRenderOption: "UNFORMATTED_VALUE",
+  });
+  const filas = res.data.values ?? [];
+  const textoLower = texto.toLowerCase();
+  let indice = -1;
+  for (const i of indicesDeGastos(filas).reverse()) {
+    const categoria = String(filas[i][1] ?? "").toLowerCase();
+    const descripcion = String(filas[i][2] ?? "").toLowerCase();
+    if (categoria.includes(textoLower) || descripcion.includes(textoLower)) {
+      indice = i;
+      break;
+    }
+  }
+  if (indice === -1) return null;
+
+  const sheetId = await obtenerSheetId(sheetsClient, spreadsheetId);
+  await sheetsClient.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [
+        { deleteDimension: { range: { sheetId, dimension: "ROWS", startIndex: indice + 1, endIndex: indice + 2 } } },
+      ],
+    },
+  });
+
+  return filaAGasto(filas[indice]);
+}
+
+// Borra todas las filas de datos (gastos + separadores de mes) y las
+// re-crea vacias. Usar deleteDimension + appendDimension (en vez de solo
+// limpiar valores) evita que queden fusiones de celdas viejas de
+// separadores, que confunden a los proximos appends.
+export async function borrarTodosLosGastos(): Promise<number> {
+  const sheetsClient = await getSheetsClient();
+  const spreadsheetId = env.GOOGLE_SHEET_ID();
+  const res = await sheetsClient.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${SHEET_NAME}!A2:A`,
+    valueRenderOption: "UNFORMATTED_VALUE",
+  });
+  const filas = res.data.values ?? [];
+  if (filas.length === 0) return 0;
+
+  const cantidadGastos = filas.filter((f) => typeof f[0] === "number").length;
   const sheetId = await obtenerSheetId(sheetsClient, spreadsheetId);
 
   await sheetsClient.spreadsheets.batchUpdate({
     spreadsheetId,
     requestBody: {
       requests: [
-        {
-          deleteDimension: {
-            range: {
-              sheetId,
-              dimension: "ROWS",
-              startIndex: numeroFilaEnHoja - 1,
-              endIndex: numeroFilaEnHoja,
-            },
-          },
-        },
+        { deleteDimension: { range: { sheetId, dimension: "ROWS", startIndex: 1, endIndex: 1 + filas.length } } },
+        { appendDimension: { sheetId, dimension: "ROWS", length: filas.length } },
       ],
     },
   });
 
-  return {
-    fecha: fechaDesdeSerialDeSheets(Number(ultima[0])),
-    categoria: String(ultima[1] ?? ""),
-    descripcion: String(ultima[2] ?? ""),
-    monto: Number(ultima[3]) || 0,
-  };
+  return cantidadGastos;
 }
 
 export type CambiosGasto = Partial<Pick<NuevoGasto, "fecha" | "monto" | "categoria" | "descripcion">>;

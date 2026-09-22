@@ -35,6 +35,19 @@ const resumenSchema = z.object({
 
 const borrarSchema = z.object({
   tipo: z.literal("borrar"),
+  objetivo: z
+    .enum(["ultimo", "todos", "coincidencia"])
+    .describe(
+      "'ultimo' para borrar el/los ultimos gastos cargados; 'todos' si pide borrar TODOS los gastos de la planilla (ej 'borra todo', 'vacia la planilla', 'borra todos los gastos'); 'coincidencia' si menciona una descripcion o categoria especifica de que gasto borrar (ej 'borra el gasto del kiosko', 'elimina el del cine')"
+    ),
+  cantidad: z
+    .number()
+    .nullable()
+    .describe("Si objetivo es 'ultimo' y pide borrar varios (ej 'borra los ultimos 3 gastos'), cuantos. null si no especifica cantidad (se borra 1)"),
+  texto_busqueda: z
+    .string()
+    .nullable()
+    .describe("Si objetivo es 'coincidencia', la palabra clave a buscar en la categoria o descripcion (ej 'kiosko'). null en los demas casos"),
 });
 
 const editarSchema = z.object({
@@ -77,7 +90,10 @@ El usuario puede escribir estos tipos de mensajes, y tenes que clasificar cual e
 
 2. Un pedido de resumen o estadisticas (tipo "resumen"): frases como "resumen de hoy", "cuanto gaste esta semana", "resumen de este mes", "gastos de agosto", "resumen del anio", "cuanto llevo gastado en 2026". Elegi el periodo (dia/semana/mes/anio) segun lo que pida; si pide un mes o anio puntual poné una fecha de referencia dentro de ese periodo, si no la deja en null.
 
-3. Un pedido de borrar el ultimo gasto cargado (tipo "borrar"): frases como "borra eso", "borra el ultimo gasto", "me equivoque, borralo", "elimina el gasto anterior".
+3. Un pedido de borrar gastos (tipo "borrar"). Hay 3 variantes:
+   - objetivo "ultimo": "borra eso", "borra el ultimo gasto", "me equivoque, borralo", "elimina el gasto anterior", "borra los ultimos 3 gastos" (cantidad: 3).
+   - objetivo "todos": "borra todo", "vacia la planilla", "borra todos los gastos", "eliminá todo lo cargado".
+   - objetivo "coincidencia": "borra el gasto del kiosko", "elimina el del cine", "borra el gasto de nafta" -> texto_busqueda con la palabra clave (ej "kiosko", "cine", "nafta").
 
 4. Un pedido de corregir o editar el ultimo gasto cargado, sin borrarlo (tipo "editar"): frases como "en realidad fueron 4000", "cambia la categoria a Transporte", "era en el super, no en el kiosco". Extraé solo los campos que menciona (monto/categoria/descripcion), dejando en null los que no cambia.
 
