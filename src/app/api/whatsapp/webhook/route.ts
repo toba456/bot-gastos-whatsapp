@@ -17,7 +17,15 @@ import {
   type WhatsAppWebhookPayload,
 } from "@/lib/whatsapp";
 import { interpretarMensaje, type MensajeInterpretado } from "@/lib/interpretarMensaje";
-import { calcularResumen, textoResumen, urlGraficoTorta, tituloPeriodo, type Periodo } from "@/lib/resumen";
+import {
+  calcularResumen,
+  textoResumen,
+  urlGraficoTorta,
+  tituloPeriodo,
+  listarGastos,
+  textoListado,
+  type Periodo,
+} from "@/lib/resumen";
 import { hoyISOEnArgentina } from "@/lib/fechaArgentina";
 import {
   guardarConfirmacionPendiente,
@@ -50,6 +58,11 @@ async function responderConResumen(periodo: Periodo, referencia: Date) {
   if (grafico) {
     await enviarImagen(env.WHATSAPP_OWNER_NUMBER(), grafico, `Gastos de ${tituloPeriodo(resumen)}`);
   }
+}
+
+async function responderConListado(periodo: Periodo, referencia: Date) {
+  const datos = await listarGastos(periodo, referencia);
+  await responder(textoListado(datos));
 }
 
 function esConfirmacionAfirmativa(texto: string): boolean {
@@ -182,6 +195,11 @@ export async function POST(request: NextRequest) {
           ? new Date(`${interpretado.fecha}T00:00:00Z`)
           : new Date(`${hoyISOEnArgentina()}T00:00:00Z`);
         await responderConResumen(interpretado.periodo, referencia);
+      } else if (interpretado.tipo === "listado") {
+        const referencia = interpretado.fecha
+          ? new Date(`${interpretado.fecha}T00:00:00Z`)
+          : new Date(`${hoyISOEnArgentina()}T00:00:00Z`);
+        await responderConListado(interpretado.periodo, referencia);
       } else if (interpretado.tipo === "borrar") {
         await iniciarConfirmacionDeBorrado(interpretado);
       } else if (interpretado.tipo === "editar") {

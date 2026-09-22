@@ -1,4 +1,4 @@
-import { leerGastos } from "@/lib/sheets";
+import { leerGastos, type FilaGasto } from "@/lib/sheets";
 import { nombreMes } from "@/lib/meses";
 
 export type Periodo = "dia" | "semana" | "mes" | "anio";
@@ -20,7 +20,7 @@ function formatearFechaCorta(d: Date): string {
   return `${dd}/${mm}/${d.getUTCFullYear()}`;
 }
 
-function inicioYFinDePeriodo(periodo: Periodo, referencia: Date): { inicio: Date; fin: Date } {
+export function inicioYFinDePeriodo(periodo: Periodo, referencia: Date): { inicio: Date; fin: Date } {
   const anio = referencia.getUTCFullYear();
   const mes = referencia.getUTCMonth();
   const dia = referencia.getUTCDate();
@@ -75,14 +75,51 @@ export async function calcularResumen(periodo: Periodo, referencia: Date): Promi
   };
 }
 
-export function tituloPeriodo(r: Resumen): string {
-  if (r.periodo === "dia") return formatearFechaCorta(r.inicio);
-  if (r.periodo === "semana") {
-    const ultimoDia = new Date(r.fin.getTime() - 86400000);
-    return `Semana del ${formatearFechaCorta(r.inicio)} al ${formatearFechaCorta(ultimoDia)}`;
+export function tituloDePeriodo(periodo: Periodo, inicio: Date, fin: Date): string {
+  if (periodo === "dia") return formatearFechaCorta(inicio);
+  if (periodo === "semana") {
+    const ultimoDia = new Date(fin.getTime() - 86400000);
+    return `Semana del ${formatearFechaCorta(inicio)} al ${formatearFechaCorta(ultimoDia)}`;
   }
-  if (r.periodo === "mes") return `${nombreMes(r.inicio.getUTCMonth() + 1)} ${r.inicio.getUTCFullYear()}`;
-  return `Año ${r.inicio.getUTCFullYear()}`;
+  if (periodo === "mes") return `${nombreMes(inicio.getUTCMonth() + 1)} ${inicio.getUTCFullYear()}`;
+  return `Año ${inicio.getUTCFullYear()}`;
+}
+
+export function tituloPeriodo(r: Resumen): string {
+  return tituloDePeriodo(r.periodo, r.inicio, r.fin);
+}
+
+export async function listarGastos(periodo: Periodo, referencia: Date): Promise<{
+  titulo: string;
+  gastos: FilaGasto[];
+  total: number;
+}> {
+  const gastos = await leerGastos();
+  const { inicio, fin } = inicioYFinDePeriodo(periodo, referencia);
+  const delPeriodo = gastos
+    .filter((g) => g.fecha >= inicio && g.fecha < fin)
+    .sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
+  return {
+    titulo: tituloDePeriodo(periodo, inicio, fin),
+    gastos: delPeriodo,
+    total: delPeriodo.reduce((acc, g) => acc + g.monto, 0),
+  };
+}
+
+export function textoListado(datos: { titulo: string; gastos: FilaGasto[]; total: number }): string {
+  if (datos.gastos.length === 0) {
+    return `No encontré gastos cargados en ${datos.titulo}.`;
+  }
+  const lineas = datos.gastos.map((g) => {
+    const fechaCorta = formatearFechaCorta(g.fecha);
+    return `• ${fechaCorta} — ${g.categoria} — ${g.descripcion} — ${formatearPesos(g.monto)}`;
+  });
+  return [
+    `📋 Gastos de ${datos.titulo}`,
+    ...lineas,
+    "",
+    `Total: ${formatearPesos(datos.total)} (${datos.gastos.length} gastos)`,
+  ].join("\n");
 }
 
 function formatearPesos(monto: number): string {
