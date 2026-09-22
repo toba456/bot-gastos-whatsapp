@@ -1,36 +1,25 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Bot de Gastos por WhatsApp
 
-## Getting Started
+Ver [PROYECTO.md](./PROYECTO.md) para el plan completo (objetivo, stack, arquitectura y fases).
 
-First, run the development server:
+## Desarrollo local
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Copiá `.env.local.example` a `.env.local` y completá las variables antes de correr el proyecto.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Configuracion necesaria (Fase 1)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. **WhatsApp Cloud API**: crear una app de tipo "Business" en [Meta for Developers](https://developers.facebook.com/), agregar el producto WhatsApp, y de ahi sacar `WHATSAPP_ACCESS_TOKEN` (token temporal o permanente) y `WHATSAPP_PHONE_NUMBER_ID`. `WHATSAPP_VERIFY_TOKEN` lo inventas vos (cualquier string) y lo usas al configurar el webhook.
+2. **Webhook**: una vez deployado en Vercel, en la app de Meta configurar la URL `https://<tu-deploy>.vercel.app/api/whatsapp/webhook` con el verify token elegido, y suscribirse al campo `messages`.
+3. **Google Sheets**: crear un proyecto en Google Cloud, habilitar la API de Sheets, crear una service account, descargar su clave JSON (de ahi salen `GOOGLE_SERVICE_ACCOUNT_EMAIL` y `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`), crear una planilla nueva, compartirla con el email de la service account (permiso Editor), y copiar el ID de la planilla (`GOOGLE_SHEET_ID`, esta en la URL) . La hoja se llama `Gastos` (se crea el encabezado solo la primera vez que se guarda un gasto).
+4. **Vercel AI Gateway**: al linkear el proyecto con `vercel link` y correr `vercel env pull`, la variable `AI_GATEWAY_API_KEY` se completa sola si el proyecto esta en un team con AI Gateway habilitado. Ahi se llama a Gemini sin instalar el SDK de Google directamente.
 
-## Learn More
+## Endpoint del webhook
 
-To learn more about Next.js, take a look at the following resources:
+`src/app/api/whatsapp/webhook/route.ts`
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `GET`: responde al challenge de verificacion de Meta.
+- `POST`: recibe mensajes de texto, los interpreta con Gemini (`src/lib/parseGasto.ts`), los guarda en Sheets (`src/lib/sheets.ts`) y responde por WhatsApp confirmando lo guardado (`src/lib/whatsapp.ts`).
