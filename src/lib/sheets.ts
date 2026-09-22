@@ -371,6 +371,46 @@ export async function previsualizarUltimos(cantidad: number): Promise<FilaGasto[
   return gastos.slice(-cantidad);
 }
 
+export async function previsualizarEnRango(inicio: Date, fin: Date): Promise<FilaGasto[]> {
+  const gastos = await leerGastos();
+  return gastos.filter((g) => g.fecha >= inicio && g.fecha < fin);
+}
+
+export async function borrarGastosEnRango(inicio: Date, fin: Date): Promise<FilaGasto[]> {
+  const sheetsClient = await getSheetsClient();
+  const spreadsheetId = env.GOOGLE_SHEET_ID();
+  const res = await sheetsClient.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${SHEET_NAME}!A2:D`,
+    valueRenderOption: "UNFORMATTED_VALUE",
+  });
+  const filas = res.data.values ?? [];
+  const aBorrar: number[] = [];
+  const resultado: FilaGasto[] = [];
+  filas.forEach((fila, i) => {
+    if (typeof fila[0] !== "number") return;
+    const gasto = filaAGasto(fila);
+    if (gasto.fecha >= inicio && gasto.fecha < fin) {
+      aBorrar.push(i);
+      resultado.push(gasto);
+    }
+  });
+  if (aBorrar.length === 0) return [];
+
+  const sheetId = await obtenerSheetId(sheetsClient, spreadsheetId);
+  const requests = aBorrar
+    .slice()
+    .sort((a, b) => b - a)
+    .map((i) => ({
+      deleteDimension: {
+        range: { sheetId, dimension: "ROWS" as const, startIndex: i + 1, endIndex: i + 2 },
+      },
+    }));
+  await sheetsClient.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests } });
+
+  return resultado;
+}
+
 export async function previsualizarCoincidencia(texto: string): Promise<FilaGasto | null> {
   const gastos = await leerGastos();
   const textoLower = texto.toLowerCase();

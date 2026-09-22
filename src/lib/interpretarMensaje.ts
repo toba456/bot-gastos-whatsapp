@@ -49,9 +49,9 @@ const listadoSchema = z.object({
 const borrarSchema = z.object({
   tipo: z.literal("borrar"),
   objetivo: z
-    .enum(["ultimo", "todos", "coincidencia"])
+    .enum(["ultimo", "todos", "coincidencia", "periodo"])
     .describe(
-      "'ultimo' para borrar el/los ultimos gastos cargados; 'todos' si pide borrar TODOS los gastos de la planilla (ej 'borra todo', 'vacia la planilla', 'borra todos los gastos'); 'coincidencia' si menciona una descripcion o categoria especifica de que gasto borrar (ej 'borra el gasto del kiosko', 'elimina el del cine')"
+      "'ultimo' para borrar el/los ultimos gastos cargados; 'todos' si pide borrar TODOS los gastos de la planilla, de toda la historia (ej 'borra todo', 'vacia la planilla'); 'coincidencia' si menciona una descripcion o categoria especifica de que gasto borrar (ej 'borra el gasto del kiosko'); 'periodo' si pide borrar todos los gastos de un periodo puntual (ej 'borra todos los gastos de hoy', 'borra los gastos de esta semana', 'borra todo lo de agosto')"
     ),
   cantidad: z
     .number()
@@ -61,6 +61,16 @@ const borrarSchema = z.object({
     .string()
     .nullable()
     .describe("Si objetivo es 'coincidencia', la palabra clave a buscar en la categoria o descripcion (ej 'kiosko'). null en los demas casos"),
+  periodo: z
+    .enum(["dia", "semana", "mes", "anio"])
+    .nullable()
+    .describe("Si objetivo es 'periodo', el periodo a borrar (dia/semana/mes/anio). null en los demas casos"),
+  fecha: z
+    .string()
+    .nullable()
+    .describe(
+      "Si objetivo es 'periodo', fecha de referencia YYYY-MM-DD dentro de ese periodo (ej 'agosto' -> 1 de agosto). null si no especifica una fecha puntual (se asume hoy/esta semana/este mes/este anio), o si objetivo no es 'periodo'"
+    ),
 });
 
 const editarSchema = z.object({
@@ -106,10 +116,11 @@ El usuario puede escribir estos tipos de mensajes, y tenes que clasificar cual e
 
 3. Un pedido de listado, es decir, ver cada gasto individual de un periodo (tipo "listado"): frases como "que gaste hoy", "dame el listado de esta semana", "los gastos de agosto", "que cargue el lunes", "mostrame todos los gastos del mes". Es cuando el usuario quiere ver CADA gasto por separado, no solo el total. Mismo formato de periodo/fecha que "resumen".
 
-4. Un pedido de borrar gastos (tipo "borrar"). Hay 3 variantes:
+4. Un pedido de borrar gastos (tipo "borrar"). Hay 4 variantes:
    - objetivo "ultimo": "borra eso", "borra el ultimo gasto", "me equivoque, borralo", "elimina el gasto anterior", "borra los ultimos 3 gastos" (cantidad: 3).
-   - objetivo "todos": "borra todo", "vacia la planilla", "borra todos los gastos", "eliminá todo lo cargado".
+   - objetivo "todos": "borra todo", "vacia la planilla", "borra todos los gastos" (sin mencionar un periodo puntual, es decir toda la historia).
    - objetivo "coincidencia": "borra el gasto del kiosko", "elimina el del cine", "borra el gasto de nafta" -> texto_busqueda con la palabra clave (ej "kiosko", "cine", "nafta").
+   - objetivo "periodo": "borra todos los gastos de hoy", "borra los gastos de esta semana", "borra todo lo de agosto", "elimina los gastos de este mes" -> periodo (dia/semana/mes/anio) y fecha de referencia si menciona un periodo puntual.
 
 5. Un pedido de corregir o editar el ultimo gasto cargado, sin borrarlo (tipo "editar"): frases como "en realidad fueron 4000", "cambia la categoria a Transporte", "era en el super, no en el kiosco". Extraé solo los campos que menciona (monto/categoria/descripcion), dejando en null los que no cambia.
 

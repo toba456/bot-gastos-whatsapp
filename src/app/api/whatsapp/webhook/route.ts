@@ -3,11 +3,13 @@ import { env } from "@/lib/env";
 import {
   agregarGastos,
   borrarGastoPorTexto,
+  borrarGastosEnRango,
   borrarTodosLosGastos,
   borrarUltimosGastos,
   contarGastos,
   editarUltimoGasto,
   previsualizarCoincidencia,
+  previsualizarEnRango,
   previsualizarUltimos,
 } from "@/lib/sheets";
 import {
@@ -22,8 +24,10 @@ import {
   textoResumen,
   urlGraficoTorta,
   tituloPeriodo,
+  tituloDePeriodo,
   listarGastos,
   textoListado,
+  inicioYFinDePeriodo,
   type Periodo,
 } from "@/lib/resumen";
 import { hoyISOEnArgentina } from "@/lib/fechaArgentina";
@@ -95,6 +99,27 @@ async function iniciarConfirmacionDeBorrado(interpretado: Extract<MensajeInterpr
     return;
   }
 
+  if (interpretado.objetivo === "periodo" && interpretado.periodo) {
+    const referencia = interpretado.fecha
+      ? new Date(`${interpretado.fecha}T00:00:00Z`)
+      : new Date(`${hoyISOEnArgentina()}T00:00:00Z`);
+    const { inicio, fin } = inicioYFinDePeriodo(interpretado.periodo, referencia);
+    const candidatos = await previsualizarEnRango(inicio, fin);
+    const titulo = tituloDePeriodo(interpretado.periodo, inicio, fin);
+    if (candidatos.length === 0) {
+      await responder(`No hay ningún gasto cargado en ${titulo}.`);
+      return;
+    }
+    const lineas = candidatos.map((g) => `${g.categoria} — $${g.monto} — ${g.descripcion}`);
+    const resumen = [`¿Querés borrar los ${candidatos.length} gastos de ${titulo}?`, ...lineas].join("\n");
+    await guardarConfirmacionPendiente({
+      accion: { tipo: "periodo", periodo: interpretado.periodo, fecha: referencia.toISOString().slice(0, 10) },
+      resumen,
+    });
+    await responder(`${resumen}\n\nRespondé "sí" para confirmar o "no" para cancelar.`);
+    return;
+  }
+
   if (interpretado.objetivo === "coincidencia" && interpretado.texto_busqueda) {
     const encontrado = await previsualizarCoincidencia(interpretado.texto_busqueda);
     if (!encontrado) {
@@ -137,6 +162,18 @@ async function ejecutarBorrado(accion: AccionBorrado) {
       await responder(`Borrado 🗑️\n${borrado.categoria} — $${borrado.monto}\n${borrado.descripcion}`);
     } else {
       await responder("No pude encontrar ese gasto (puede que ya se haya borrado).");
+    }
+    return;
+  }
+  if (accion.tipo === "periodo") {
+    const referencia = new Date(`${accion.fecha}T00:00:00Z`);
+    const { inicio, fin } = inicioYFinDePeriodo(accion.periodo, referencia);
+    const borrados = await borrarGastosEnRango(inicio, fin);
+    const titulo = tituloDePeriodo(accion.periodo, inicio, fin);
+    if (borrados.length > 0) {
+      await responder(`Borré ${borrados.length} gastos de ${titulo} 🗑️`);
+    } else {
+      await responder(`No había gastos en ${titulo} para borrar.`);
     }
     return;
   }

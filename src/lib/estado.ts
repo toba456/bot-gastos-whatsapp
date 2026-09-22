@@ -1,5 +1,6 @@
 import { google } from "googleapis";
 import { env } from "@/lib/env";
+import type { Periodo } from "@/lib/resumen";
 
 // Pestaña oculta de la misma planilla, usada solo para guardar si hay una
 // accion destructiva (borrado) esperando que el usuario la confirme por
@@ -20,7 +21,8 @@ type SheetsClient = Awaited<ReturnType<typeof getSheetsClient>>;
 export type AccionBorrado =
   | { tipo: "ultimo"; cantidad: number }
   | { tipo: "todos" }
-  | { tipo: "coincidencia"; texto: string };
+  | { tipo: "coincidencia"; texto: string }
+  | { tipo: "periodo"; periodo: Periodo; fecha: string };
 
 export type ConfirmacionPendiente = {
   accion: AccionBorrado;
