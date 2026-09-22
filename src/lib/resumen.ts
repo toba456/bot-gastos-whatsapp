@@ -10,6 +10,10 @@ export type Resumen = {
   total: number;
   cantidadGastos: number;
   porCategoria: Array<{ categoria: string; total: number }>;
+  // Desglose por una unidad de tiempo mas chica que el periodo: por dia si
+  // el periodo es semana o mes, por mes si el periodo es anio, vacio si el
+  // periodo ya es un dia (no hay nada mas chico para desglosar).
+  porSubperiodo: Array<{ etiqueta: string; total: number }>;
 };
 
 export { nombreMes };
@@ -19,6 +23,8 @@ function formatearFechaCorta(d: Date): string {
   const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
   return `${dd}/${mm}/${d.getUTCFullYear()}`;
 }
+
+const NOMBRES_DIA_SEMANA = ["Dom", "Lun", "Mar", "Mié", "Jué", "Vie", "Sáb"];
 
 export function inicioYFinDePeriodo(periodo: Periodo, referencia: Date): { inicio: Date; fin: Date } {
   const anio = referencia.getUTCFullYear();
@@ -52,6 +58,48 @@ export function inicioYFinDePeriodo(periodo: Periodo, referencia: Date): { inici
   return { inicio, fin };
 }
 
+// Agrupa los gastos de un periodo en una unidad mas chica: por dia
+// (semana/mes) o por mes (anio). Devuelve las entradas ordenadas
+// cronologicamente. Para "dia" no hay nada mas chico, devuelve [].
+function calcularPorSubperiodo(
+  periodo: Periodo,
+  delPeriodo: FilaGasto[]
+): Array<{ etiqueta: string; total: number }> {
+  if (periodo === "dia") return [];
+
+  if (periodo === "anio") {
+    const porMes = new Map<number, number>();
+    for (const g of delPeriodo) {
+      const mes = g.fecha.getUTCMonth() + 1;
+      porMes.set(mes, (porMes.get(mes) ?? 0) + g.monto);
+    }
+    return [...porMes.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([mes, total]) => ({ etiqueta: nombreMes(mes), total }));
+  }
+
+  // semana o mes: agrupar por dia calendario.
+  const porDia = new Map<string, { total: number; fecha: Date }>();
+  for (const g of delPeriodo) {
+    const clave = g.fecha.toISOString().slice(0, 10);
+    const actual = porDia.get(clave);
+    if (actual) {
+      actual.total += g.monto;
+    } else {
+      porDia.set(clave, { total: g.monto, fecha: g.fecha });
+    }
+  }
+  return [...porDia.values()]
+    .sort((a, b) => a.fecha.getTime() - b.fecha.getTime())
+    .map(({ fecha, total }) => {
+      const etiqueta =
+        periodo === "semana"
+          ? `${NOMBRES_DIA_SEMANA[fecha.getUTCDay()]} ${String(fecha.getUTCDate()).padStart(2, "0")}`
+          : String(fecha.getUTCDate()).padStart(2, "0");
+      return { etiqueta, total };
+    });
+}
+
 export async function calcularResumen(periodo: Periodo, referencia: Date): Promise<Resumen> {
   const gastos = await leerGastos();
   const { inicio, fin } = inicioYFinDePeriodo(periodo, referencia);
@@ -72,6 +120,7 @@ export async function calcularResumen(periodo: Periodo, referencia: Date): Promi
     total: delPeriodo.reduce((acc, g) => acc + g.monto, 0),
     cantidadGastos: delPeriodo.length,
     porCategoria,
+    porSubperiodo: calcularPorSubperiodo(periodo, delPeriodo),
   };
 }
 
@@ -126,18 +175,29 @@ function formatearPesos(monto: number): string {
   return `$${monto.toLocaleString("es-AR", { maximumFractionDigits: 0 })}`;
 }
 
+function etiquetaSubperiodo(periodo: Periodo): string | null {
+  if (periodo === "anio") return "Por mes";
+  if (periodo === "mes") return "Por día";
+  if (periodo === "semana") return "Por día";
+  return null;
+}
+
 export function textoResumen(r: Resumen): string {
   const titulo = tituloPeriodo(r);
   if (r.cantidadGastos === 0) {
     return `No encontré gastos cargados en ${titulo}.`;
   }
-  const lineas = r.porCategoria.map((c) => `• ${c.categoria}: ${formatearPesos(c.total)}`);
-  return [
-    `📊 Resumen de ${titulo}`,
-    `Total: ${formatearPesos(r.total)} (${r.cantidadGastos} gastos)`,
-    "",
-    ...lineas,
-  ].join("\n");
+
+  const bloques: string[] = [`📊 Resumen de ${titulo}`, `Total: ${formatearPesos(r.total)} (${r.cantidadGastos} gastos)`];
+
+  const tituloSub = etiquetaSubperiodo(r.periodo);
+  if (tituloSub && r.porSubperiodo.length > 0) {
+    bloques.push("", `${tituloSub}:`, ...r.porSubperiodo.map((s) => `• ${s.etiqueta}: ${formatearPesos(s.total)}`));
+  }
+
+  bloques.push("", "Por categoría:", ...r.porCategoria.map((c) => `• ${c.categoria}: ${formatearPesos(c.total)}`));
+
+  return bloques.join("\n");
 }
 
 // Genera la URL de un grafico de torta con QuickChart (servicio gratuito
@@ -152,7 +212,7 @@ export function urlGraficoTorta(r: Resumen): string | null {
     },
     options: {
       plugins: {
-        title: { display: true, text: `Gastos de ${tituloPeriodo(r)}` },
+        title: { display: true, text: `Por categoría — ${tituloPeriodo(r)}` },
       },
     },
   };
@@ -160,6 +220,32 @@ export function urlGraficoTorta(r: Resumen): string | null {
     c: JSON.stringify(config),
     backgroundColor: "white",
     width: "500",
+    height: "300",
+  });
+  return `https://quickchart.io/chart?${params.toString()}`;
+}
+
+// Grafico de barras del desglose por subperiodo (por dia o por mes, segun
+// corresponda). null si el periodo es "dia" (no hay nada que desglosar).
+export function urlGraficoBarras(r: Resumen): string | null {
+  if (r.porSubperiodo.length === 0) return null;
+  const config = {
+    type: "bar",
+    data: {
+      labels: r.porSubperiodo.map((s) => s.etiqueta),
+      datasets: [{ data: r.porSubperiodo.map((s) => s.total) }],
+    },
+    options: {
+      plugins: {
+        legend: { display: false },
+        title: { display: true, text: `${etiquetaSubperiodo(r.periodo)} — ${tituloPeriodo(r)}` },
+      },
+    },
+  };
+  const params = new URLSearchParams({
+    c: JSON.stringify(config),
+    backgroundColor: "white",
+    width: "600",
     height: "300",
   });
   return `https://quickchart.io/chart?${params.toString()}`;

@@ -27,6 +27,7 @@ import {
   calcularResumen,
   textoResumen,
   urlGraficoTorta,
+  urlGraficoBarras,
   tituloPeriodo,
   tituloDePeriodo,
   listarGastos,
@@ -66,9 +67,13 @@ function lineaDeGasto(g: FilaGasto): string {
 async function responderConResumen(periodo: Periodo, referencia: Date) {
   const resumen = await calcularResumen(periodo, referencia);
   await responder(textoResumen(resumen));
-  const grafico = urlGraficoTorta(resumen);
-  if (grafico) {
-    await enviarImagen(env.WHATSAPP_OWNER_NUMBER(), grafico, `Gastos de ${tituloPeriodo(resumen)}`);
+  const barras = urlGraficoBarras(resumen);
+  if (barras) {
+    await enviarImagen(env.WHATSAPP_OWNER_NUMBER(), barras, `Gastos de ${tituloPeriodo(resumen)}`);
+  }
+  const torta = urlGraficoTorta(resumen);
+  if (torta) {
+    await enviarImagen(env.WHATSAPP_OWNER_NUMBER(), torta, `Por categoría — ${tituloPeriodo(resumen)}`);
   }
 }
 
