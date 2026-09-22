@@ -1,25 +1,163 @@
 # Bot de Gastos por WhatsApp
 
-Ver [PROYECTO.md](./PROYECTO.md) para el plan completo (objetivo, stack, arquitectura y fases).
+Asistente personal de WhatsApp para registrar gastos hablando o escribiendo en lenguaje natural. Interpreta el mensaje con Gemini, lo guarda en una Google Sheet prolija, y responde confirmando. También arma resúmenes con gráfico, listados detallados, y permite editar o borrar lo cargado — todo por chat, sin abrir ninguna app.
 
-## Desarrollo local
+Ver [PROYECTO.md](./PROYECTO.md) para el plan original completo (objetivo, fases, decisiones de stack).
 
-```bash
-npm run dev
+## Qué hace hoy
+
+- **Cargar gastos** por texto libre, uno o varios en el mismo mensaje.
+  > "gasté 5000 en el súper"
+  > "gasté 300 en el kiosco, 8000 en el cine y 50000 en un pantalón"
+- **Editar** el último gasto cargado sin borrarlo.
+  > "en realidad fueron 4000"
+  > "cambiá la categoría a Transporte"
+- **Borrar** gastos, con confirmación previa (el bot muestra qué va a borrar y espera un "sí"/"no"):
+  - el último, o los últimos N: *"borrá el último gasto"*, *"borrá los últimos 3"*
+  - uno puntual por descripción/categoría: *"borrá el gasto del kiosco"*
+  - todos los de un período: *"borrá todos los gastos de hoy"*, *"borrá lo de agosto"*
+  - absolutamente todo: *"borrá todo"*
+- **Resumen** con total, desglose por categoría y gráfico de torta, por día/semana/mes/año.
+  > "resumen de este mes", "cuánto gasté esta semana", "resumen de agosto"
+- **Listado** de cada gasto individual de un período (sin agregados ni gráfico).
+  > "qué gasté hoy", "los gastos de agosto"
+- **Resumen automático de fin de mes**: un cron corre todos los días y, si es el último día del mes, manda el resumen mensual solo, sin que se lo pidas.
+- La planilla de Google Sheets queda organizada sola: encabezado con formato, filas separadoras con el nombre de cada mes, fecha y monto con formato correcto.
+
+Todo el bot responde siempre al mismo número (el dueño), pensado para uso personal de una sola persona.
+
+## Stack
+
+| Componente | Elección |
+|---|---|
+| Mensajería | [WhatsApp Cloud API](https://developers.facebook.com/docs/whatsapp/cloud-api) (número de prueba gratuito de Meta) |
+| Hosting | [Vercel](https://vercel.com) (Hobby) — Next.js 16 / TypeScript, App Router |
+| IA | [Gemini](https://ai.google.dev) vía [Vercel AI Gateway](https://vercel.com/docs/ai-gateway) ([AI SDK](https://ai-sdk.dev), `generateObject` + `zod`) |
+| Base de datos | [Google Sheets](https://developers.google.com/sheets/api) (vía `googleapis`, con una service account) |
+| Automatización | [Vercel Cron](https://vercel.com/docs/cron-jobs) (resumen mensual automático) |
+
+No hay base de datos tradicional: la planilla de Sheets *es* la base de datos, y hasta el estado de "hay un borrado esperando confirmación" se guarda en una pestaña oculta de la misma planilla (`_estado`).
+
+## Arquitectura
+
+```
+WhatsApp (usuario) ──▶ Webhook (Vercel Function) ──▶ Gemini (clasifica el mensaje)
+                              │                              │
+                              │                              ▼
+                              │                    { tipo: gasto | resumen |
+                              │                      listado | editar | borrar }
+                              ▼
+                        Google Sheets (leer/escribir gastos + estado pendiente)
+                              │
+                              ▼
+                    WhatsApp (respuesta al dueño del bot)
+
+Vercel Cron (diario) ──▶ /api/cron/resumen-mensual ──▶ (si es fin de mes) ──▶ WhatsApp
 ```
 
-Copiá `.env.local.example` a `.env.local` y completá las variables antes de correr el proyecto.
+Cada mensaje de texto entrante pasa primero por [`interpretarMensaje`](src/lib/interpretarMensaje.ts), que le pide a Gemini que lo clasifique en uno de 6 tipos (`gasto`, `resumen`, `listado`, `borrar`, `editar`, `otro`) usando un schema de `zod` con salida estructurada. El webhook (`src/app/api/whatsapp/webhook/route.ts`) ejecuta la acción correspondiente y siempre responde al número fijo `WHATSAPP_OWNER_NUMBER`, nunca al `from` del mensaje entrante (ver la nota sobre números de Argentina más abajo).
 
-## Configuracion necesaria (Fase 1)
+## Estructura del proyecto
 
-1. **WhatsApp Cloud API**: crear una app de tipo "Business" en [Meta for Developers](https://developers.facebook.com/), agregar el producto WhatsApp, y de ahi sacar `WHATSAPP_ACCESS_TOKEN` (token temporal o permanente) y `WHATSAPP_PHONE_NUMBER_ID`. `WHATSAPP_VERIFY_TOKEN` lo inventas vos (cualquier string) y lo usas al configurar el webhook.
-2. **Webhook**: una vez deployado en Vercel, en la app de Meta configurar la URL `https://<tu-deploy>.vercel.app/api/whatsapp/webhook` con el verify token elegido, y suscribirse al campo `messages`.
-3. **Google Sheets**: crear un proyecto en Google Cloud, habilitar la API de Sheets, crear una service account, descargar su clave JSON (de ahi salen `GOOGLE_SERVICE_ACCOUNT_EMAIL` y `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`), crear una planilla nueva, compartirla con el email de la service account (permiso Editor), y copiar el ID de la planilla (`GOOGLE_SHEET_ID`, esta en la URL) . La hoja se llama `Gastos` (se crea el encabezado solo la primera vez que se guarda un gasto).
-4. **Vercel AI Gateway**: al linkear el proyecto con `vercel link` y correr `vercel env pull`, la variable `AI_GATEWAY_API_KEY` se completa sola si el proyecto esta en un team con AI Gateway habilitado. Ahi se llama a Gemini sin instalar el SDK de Google directamente.
+```
+src/
+  app/
+    api/
+      whatsapp/webhook/route.ts   # Webhook de WhatsApp: GET (verificación) + POST (mensajes)
+      cron/resumen-mensual/route.ts  # Cron diario, manda el resumen el ultimo dia del mes
+  lib/
+    interpretarMensaje.ts   # Clasifica el mensaje con Gemini (gasto/resumen/listado/borrar/editar/otro)
+    sheets.ts                # Todo el CRUD sobre la Google Sheet (leer, agregar, editar, borrar, formatear)
+    resumen.ts                # Calculo de resumenes/listados por periodo (dia/semana/mes/anio)
+    whatsapp.ts               # Envio de mensajes de texto/imagen via WhatsApp Cloud API
+    estado.ts                 # Estado de confirmacion pendiente (pestaña oculta "_estado")
+    categorias.ts             # Lista cerrada de categorias de gasto
+    meses.ts / fechaArgentina.ts  # Helpers de fecha (nombres de mes, "hoy" en horario Argentina)
+    env.ts                    # Acceso tipado a las variables de entorno
+vercel.json                # Config del cron
+```
 
-## Endpoint del webhook
+## Configuración desde cero
 
-`src/app/api/whatsapp/webhook/route.ts`
+### 1. WhatsApp Cloud API
 
-- `GET`: responde al challenge de verificacion de Meta.
-- `POST`: recibe mensajes de texto, los interpreta con Gemini (`src/lib/parseGasto.ts`), los guarda en Sheets (`src/lib/sheets.ts`) y responde por WhatsApp confirmando lo guardado (`src/lib/whatsapp.ts`).
+1. Creá una app tipo **Business** en [Meta for Developers](https://developers.facebook.com/apps) y agregale el producto **WhatsApp**.
+2. En **WhatsApp → Overview / Step 1**, generá un **Access token** (temporal al principio) y copiá el **Phone Number ID**.
+3. En esa misma pantalla, agregá tu número personal en **"Manage phone number list"** como destinatario de prueba y verificalo con el código que te llega — sin esto, el bot no puede responderte (ver la nota de Argentina abajo).
+4. `WHATSAPP_VERIFY_TOKEN` lo inventás vos (cualquier string), lo vas a usar en el paso 5.
+5. Deployá el proyecto (ver abajo) y andá a **Webhooks** (menú general de la app, no el de WhatsApp) → configurá la **Callback URL** (`https://<tu-deploy>.vercel.app/api/whatsapp/webhook`) y el **Verify token**. Suscribite al campo **`messages`**.
+6. **Importante**: además de configurar el webhook en la UI, hay que suscribir la app al WhatsApp Business Account con una llamada a la API (la UI sola no alcanza):
+   ```bash
+   curl -X POST "https://graph.facebook.com/v22.0/<WABA_ID>/subscribed_apps" \
+     -H "Authorization: Bearer <WHATSAPP_ACCESS_TOKEN>"
+   ```
+
+### 2. Google Sheets
+
+1. Creá un proyecto en [Google Cloud Console](https://console.cloud.google.com), habilitá la **Google Sheets API**.
+2. Creá una **Service Account**, generale una clave **JSON**, y de ahí sacás `GOOGLE_SERVICE_ACCOUNT_EMAIL` y `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`.
+3. Creá una planilla nueva, compartila con el email de la service account (permiso **Editor**), y copiá el `GOOGLE_SHEET_ID` de la URL.
+4. Renombrá la primera hoja/pestaña a **"Gastos"** exacto (no distingue mayúsculas). El encabezado y el formato se crean solos la primera vez que se guarda un gasto.
+
+### 3. Vercel AI Gateway (Gemini)
+
+No hace falta ninguna cuenta de Google AI Studio aparte: las llamadas a Gemini pasan por el AI Gateway de Vercel.
+
+1. `vercel link` en el proyecto (ver abajo) genera automáticamente un `VERCEL_OIDC_TOKEN` en `.env.local`, que alcanza para desarrollo local.
+2. En producción, Vercel inyecta la autenticación del Gateway solo.
+3. **Requisito de Vercel**: el AI Gateway pide una tarjeta de crédito cargada en la cuenta para desbloquear el tier gratuito (no cobra dentro de esos créditos). Se carga en `vercel.com/[team]/~/ai?modal=add-credit-card`.
+
+### 4. Deploy a Vercel
+
+```bash
+vercel link --project <nombre-del-proyecto>
+vercel env add WHATSAPP_VERIFY_TOKEN production
+vercel env add WHATSAPP_ACCESS_TOKEN production
+vercel env add WHATSAPP_PHONE_NUMBER_ID production
+vercel env add GOOGLE_SERVICE_ACCOUNT_EMAIL production
+vercel env add GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY production
+vercel env add GOOGLE_SHEET_ID production
+vercel env add WHATSAPP_OWNER_NUMBER production
+vercel env add CRON_SECRET production
+# repetir para el entorno "preview" si se va a usar
+vercel deploy --prod
+```
+
+## Variables de entorno
+
+Ver [.env.local.example](./.env.local.example) para la lista completa con comentarios. Copialo a `.env.local` para desarrollo local:
+
+```bash
+cp .env.local.example .env.local
+```
+
+| Variable | De dónde sale |
+|---|---|
+| `WHATSAPP_VERIFY_TOKEN` | La inventás vos |
+| `WHATSAPP_ACCESS_TOKEN` | Meta for Developers → WhatsApp → API Setup |
+| `WHATSAPP_PHONE_NUMBER_ID` | Meta for Developers → WhatsApp → API Setup |
+| `GOOGLE_SERVICE_ACCOUNT_EMAIL` / `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` | JSON de la service account de Google Cloud |
+| `GOOGLE_SHEET_ID` | URL de la planilla de Google Sheets |
+| `WHATSAPP_OWNER_NUMBER` | Tu número, ver nota de Argentina abajo |
+| `CRON_SECRET` | La generás vos (`openssl rand -hex 20`) |
+| `AI_GATEWAY_API_KEY` | No hace falta en Vercel (se usa OIDC); solo si corrés fuera de Vercel |
+
+## Nota sobre números de Argentina ⚠️
+
+WhatsApp Cloud API tiene una inconsistencia conocida con números argentinos: existen **dos formatos** para el mismo número:
+
+- **`wa_id`** (el que llega en el campo `from` de un mensaje entrante): `549` + código de área + número, ej `5492615700237`.
+- **Formato de marcado local** (el que hay que usar para *enviar* mensajes, al menos con un número de prueba en modo Development): `54` + código de área + `15` + número, ej `54261155700237`.
+
+Por eso `WHATSAPP_OWNER_NUMBER` tiene que cargarse en el **formato de marcado local** (con `15`, sin `9`), y el bot **nunca responde al `from`** del mensaje entrante — siempre le contesta a `WHATSAPP_OWNER_NUMBER` (que además es apropiado porque el bot es de un solo usuario). Si en algún momento se agrega un número de otro país, hay que revisar si aplica la misma conversión.
+
+## El "borrado con confirmación"
+
+Como no hay una base de datos aparte de la planilla, el estado de "hay un borrado pendiente de confirmar" se guarda en una pestaña oculta de la misma Google Sheet, llamada `_estado` (se crea sola). Cuando el bot te pregunta "¿confirmás?", tu próxima respuesta se interpreta primero como sí/no antes que como un mensaje normal; si no es ni sí ni no, te vuelve a mostrar la pregunta.
+
+## Roadmap (Fase 3, no implementada)
+
+- Carga de audio (Gemini transcribe + interpreta en la misma llamada).
+- Carga de imagen (tickets, capturas de transferencias).
+- Import de gastos históricos desde otra app (PDF/Excel exportado).
+- Automatización con Mercado Pago: investigar si hay forma oficial de leer los propios movimientos salientes vía API (la documentada es para negocios que *reciben* pagos, no para leer gastos propios como comprador).
