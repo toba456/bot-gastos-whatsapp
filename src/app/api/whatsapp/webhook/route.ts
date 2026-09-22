@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { env } from "@/lib/env";
-import { agregarGasto, borrarUltimoGasto, editarUltimoGasto } from "@/lib/sheets";
+import { agregarGastos, borrarUltimoGasto, editarUltimoGasto } from "@/lib/sheets";
 import {
   extraerMensajesDeTexto,
   enviarMensajeTexto,
@@ -46,16 +46,20 @@ export async function POST(request: NextRequest) {
       const interpretado = await interpretarMensaje(texto);
 
       if (interpretado.tipo === "gasto") {
-        await agregarGasto({
-          fecha: interpretado.fecha,
-          monto: interpretado.monto,
-          categoria: interpretado.categoria,
-          descripcion: interpretado.descripcion,
-        });
-        await enviarMensajeTexto(
-          env.WHATSAPP_OWNER_NUMBER(),
-          `Guardado ✅\n${interpretado.categoria} — $${interpretado.monto}\n${interpretado.descripcion} (${interpretado.fecha})`
+        await agregarGastos(
+          interpretado.gastos.map((g) => ({
+            fecha: g.fecha,
+            monto: g.monto,
+            categoria: g.categoria,
+            descripcion: g.descripcion,
+          }))
         );
+        const lineas = interpretado.gastos.map(
+          (g) => `${g.categoria} — $${g.monto} — ${g.descripcion} (${g.fecha})`
+        );
+        const encabezado =
+          interpretado.gastos.length > 1 ? `Guardados ✅ (${interpretado.gastos.length} gastos)` : "Guardado ✅";
+        await enviarMensajeTexto(env.WHATSAPP_OWNER_NUMBER(), [encabezado, ...lineas].join("\n"));
       } else if (interpretado.tipo === "resumen") {
         const referencia = interpretado.fecha
           ? new Date(`${interpretado.fecha}T00:00:00Z`)

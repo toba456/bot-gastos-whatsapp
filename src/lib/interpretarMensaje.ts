@@ -3,14 +3,21 @@ import { z } from "zod";
 import { CATEGORIAS } from "@/lib/categorias";
 import { hoyISOEnArgentina } from "@/lib/fechaArgentina";
 
-const gastoSchema = z.object({
-  tipo: z.literal("gasto"),
+const itemGastoSchema = z.object({
   monto: z.number().describe("Monto del gasto en pesos, siempre positivo"),
   categoria: z.enum(CATEGORIAS),
   descripcion: z.string().describe("Descripcion corta del gasto, ej: 'nafta', 'super del mes'"),
   fecha: z
     .string()
     .describe("Fecha del gasto en formato YYYY-MM-DD. Si no se menciona, usar la fecha de hoy."),
+});
+
+const gastoSchema = z.object({
+  tipo: z.literal("gasto"),
+  gastos: z
+    .array(itemGastoSchema)
+    .min(1)
+    .describe("Uno o mas gastos mencionados en el mismo mensaje (el usuario puede cargar varios juntos)"),
 });
 
 const resumenSchema = z.object({
@@ -66,7 +73,7 @@ Hoy es ${hoy}.
 
 El usuario puede escribir estos tipos de mensajes, y tenes que clasificar cual es:
 
-1. Un gasto nuevo para guardar (tipo "gasto"): frases como "gaste 5000 en el super" o "3000 pesos de nafta". Extraé el monto, la categoria mas adecuada de esta lista (${CATEGORIAS.join(", ")}), una descripcion corta y la fecha del gasto.
+1. Uno o mas gastos nuevos para guardar (tipo "gasto"): frases como "gaste 5000 en el super" o "3000 pesos de nafta". El usuario tambien puede mandar varios gastos juntos en un solo mensaje, ej: "gaste 300 en el kiosco, 8000 en el cine y 50000 en un pantalon" -> eso son 3 gastos distintos, uno por cada item en la lista "gastos". Para cada uno, extraé el monto, la categoria mas adecuada de esta lista (${CATEGORIAS.join(", ")}), una descripcion corta y la fecha del gasto.
 
 2. Un pedido de resumen o estadisticas (tipo "resumen"): frases como "resumen de hoy", "cuanto gaste esta semana", "resumen de este mes", "gastos de agosto", "resumen del anio", "cuanto llevo gastado en 2026". Elegi el periodo (dia/semana/mes/anio) segun lo que pida; si pide un mes o anio puntual poné una fecha de referencia dentro de ese periodo, si no la deja en null.
 
