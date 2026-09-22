@@ -80,14 +80,29 @@ vercel.json                # Config del cron
 ### 1. WhatsApp Cloud API
 
 1. Creá una app tipo **Business** en [Meta for Developers](https://developers.facebook.com/apps) y agregale el producto **WhatsApp**.
-2. En **WhatsApp → Overview / Step 1**, generá un **Access token** (temporal al principio) y copiá el **Phone Number ID**.
+2. En **WhatsApp → Overview / Step 1**, copiá el **Phone Number ID** (el access token temporal que se genera ahí solo sirve para probar — para producción usá el token permanente del paso 3).
 3. En esa misma pantalla, agregá tu número personal en **"Manage phone number list"** como destinatario de prueba y verificalo con el código que te llega — sin esto, el bot no puede responderte (ver la nota de Argentina abajo).
-4. `WHATSAPP_VERIFY_TOKEN` lo inventás vos (cualquier string), lo vas a usar en el paso 5.
+4. `WHATSAPP_VERIFY_TOKEN` lo inventás vos (cualquier string), lo vas a usar en el paso 6.
 5. Deployá el proyecto (ver abajo) y andá a **Webhooks** (menú general de la app, no el de WhatsApp) → configurá la **Callback URL** (`https://<tu-deploy>.vercel.app/api/whatsapp/webhook`) y el **Verify token**. Suscribite al campo **`messages`**.
 6. **Importante**: además de configurar el webhook en la UI, hay que suscribir la app al WhatsApp Business Account con una llamada a la API (la UI sola no alcanza):
    ```bash
    curl -X POST "https://graph.facebook.com/v22.0/<WABA_ID>/subscribed_apps" \
      -H "Authorization: Bearer <WHATSAPP_ACCESS_TOKEN>"
+   ```
+
+#### Access token permanente (System User)
+
+El token que se genera en "Try it out" **vence en pocas horas**. Para no tener que regenerarlo todo el tiempo, hay que crear un System User con un token sin expiración:
+
+1. En [business.facebook.com/settings](https://business.facebook.com/settings) → **Users → System users** → **Add** → rol **Admin**.
+2. Con el system user creado, **Add assets**:
+   - Pestaña **Apps** → tu app → activá **"Manage app"** (control total) → Assign assets.
+   - Repetí para la pestaña **WhatsApp accounts** → tu WhatsApp Business Account → control total.
+3. **Generate token** → elegí la app, permisos `whatsapp_business_messaging` y `whatsapp_business_management`, y **expiración "Never"**.
+4. Ese token (`EAA...`) es el que va en `WHATSAPP_ACCESS_TOKEN`. Se puede confirmar que no vence con:
+   ```bash
+   curl "https://graph.facebook.com/v22.0/debug_token?input_token=<TOKEN>&access_token=<TOKEN>"
+   # expires_at: 0 y type: "SYSTEM_USER" = no vence
    ```
 
 ### 2. Google Sheets
