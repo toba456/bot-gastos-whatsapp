@@ -49,10 +49,14 @@ const listadoSchema = z.object({
 const borrarSchema = z.object({
   tipo: z.literal("borrar"),
   objetivo: z
-    .enum(["ultimo", "todos", "coincidencia", "periodo"])
+    .enum(["ultimo", "todos", "coincidencia", "periodo", "ids"])
     .describe(
-      "'ultimo' para borrar el/los ultimos gastos cargados; 'todos' si pide borrar TODOS los gastos de la planilla, de toda la historia (ej 'borra todo', 'vacia la planilla'); 'coincidencia' si menciona una descripcion o categoria especifica de que gasto borrar (ej 'borra el gasto del kiosko'); 'periodo' si pide borrar todos los gastos de un periodo puntual (ej 'borra todos los gastos de hoy', 'borra los gastos de esta semana', 'borra todo lo de agosto')"
+      "'ultimo' para borrar el/los ultimos gastos cargados; 'todos' si pide borrar TODOS los gastos de la planilla, de toda la historia (ej 'borra todo', 'vacia la planilla'); 'coincidencia' si menciona una descripcion o categoria especifica de que gasto borrar (ej 'borra el gasto del kiosko'); 'periodo' si pide borrar todos los gastos de un periodo puntual (ej 'borra todos los gastos de hoy', 'borra los gastos de esta semana', 'borra todo lo de agosto'); 'ids' si menciona uno o mas IDs de gasto especificos (ej 'borra el gasto 12', 'borra los gastos 3, 5 y 8')"
     ),
+  ids: z
+    .array(z.number())
+    .nullable()
+    .describe("Si objetivo es 'ids', el/los ID(s) de gasto a borrar (ej [12] o [3, 5, 8]). null en los demas casos"),
   cantidad: z
     .number()
     .nullable()
@@ -75,9 +79,15 @@ const borrarSchema = z.object({
 
 const editarSchema = z.object({
   tipo: z.literal("editar"),
-  monto: z.number().nullable().describe("Nuevo monto del ultimo gasto, si lo menciona. null si no cambia"),
-  categoria: z.enum(CATEGORIAS).nullable().describe("Nueva categoria del ultimo gasto, si la menciona. null si no cambia"),
-  descripcion: z.string().nullable().describe("Nueva descripcion del ultimo gasto, si la menciona. null si no cambia"),
+  ids: z
+    .array(z.number())
+    .nullable()
+    .describe(
+      "Si el usuario menciona explicitamente el/los ID(s) del gasto a editar (ej 'edita el gasto 12', 'cambia el monto de los gastos 3 y 5 a 1000'), esos IDs. null si no menciona ningun ID (se edita el ultimo gasto cargado)"
+    ),
+  monto: z.number().nullable().describe("Nuevo monto, si lo menciona. null si no cambia"),
+  categoria: z.enum(CATEGORIAS).nullable().describe("Nueva categoria, si la menciona. null si no cambia"),
+  descripcion: z.string().nullable().describe("Nueva descripcion, si la menciona. null si no cambia"),
 });
 
 const otroSchema = z.object({
@@ -116,13 +126,14 @@ El usuario puede escribir estos tipos de mensajes, y tenes que clasificar cual e
 
 3. Un pedido de listado, es decir, ver cada gasto individual de un periodo (tipo "listado"): frases como "que gaste hoy", "dame el listado de esta semana", "los gastos de agosto", "que cargue el lunes", "mostrame todos los gastos del mes". Es cuando el usuario quiere ver CADA gasto por separado, no solo el total. Mismo formato de periodo/fecha que "resumen".
 
-4. Un pedido de borrar gastos (tipo "borrar"). Hay 4 variantes:
+4. Un pedido de borrar gastos (tipo "borrar"). Hay 5 variantes:
    - objetivo "ultimo": "borra eso", "borra el ultimo gasto", "me equivoque, borralo", "elimina el gasto anterior", "borra los ultimos 3 gastos" (cantidad: 3).
    - objetivo "todos": "borra todo", "vacia la planilla", "borra todos los gastos" (sin mencionar un periodo puntual, es decir toda la historia).
    - objetivo "coincidencia": "borra el gasto del kiosko", "elimina el del cine", "borra el gasto de nafta" -> texto_busqueda con la palabra clave (ej "kiosko", "cine", "nafta").
    - objetivo "periodo": "borra todos los gastos de hoy", "borra los gastos de esta semana", "borra todo lo de agosto", "elimina los gastos de este mes" -> periodo (dia/semana/mes/anio) y fecha de referencia si menciona un periodo puntual.
+   - objetivo "ids": "borra el gasto 12", "elimina el gasto con id 7", "borra los gastos 3, 5 y 8" -> ids con el/los numero(s) de ID mencionados. Cada gasto tiene un ID unico que aparece en las confirmaciones y listados (ej "#12 — ...").
 
-5. Un pedido de corregir o editar el ultimo gasto cargado, sin borrarlo (tipo "editar"): frases como "en realidad fueron 4000", "cambia la categoria a Transporte", "era en el super, no en el kiosco". Extraé solo los campos que menciona (monto/categoria/descripcion), dejando en null los que no cambia.
+5. Un pedido de corregir o editar un gasto ya cargado, sin borrarlo (tipo "editar"): frases como "en realidad fueron 4000", "cambia la categoria a Transporte", "era en el super, no en el kiosco" (edita el ULTIMO gasto cargado, ids null), o "cambia el monto del gasto 12 a 3000", "el gasto 5 en realidad fue en Transporte" (edita ese/esos ID(s) especificos). Extraé solo los campos que menciona (monto/categoria/descripcion), dejando en null los que no cambia.
 
 6. Cualquier otra cosa que no sea ninguno de los anteriores (tipo "otro"): preguntas sueltas, saludos, mensajes que no se entienden, etc. Nunca inventes un gasto de $0 para esto.
 

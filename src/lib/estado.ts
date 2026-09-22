@@ -22,7 +22,8 @@ export type AccionBorrado =
   | { tipo: "ultimo"; cantidad: number }
   | { tipo: "todos" }
   | { tipo: "coincidencia"; texto: string }
-  | { tipo: "periodo"; periodo: Periodo; fecha: string };
+  | { tipo: "periodo"; periodo: Periodo; fecha: string }
+  | { tipo: "ids"; ids: number[] };
 
 export type ConfirmacionPendiente = {
   accion: AccionBorrado;

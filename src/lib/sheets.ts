@@ -3,7 +3,7 @@ import { env } from "@/lib/env";
 import { nombreMes } from "@/lib/meses";
 
 const SHEET_NAME = "Gastos";
-const HEADER = ["Fecha", "Categoria", "Descripcion", "Monto"];
+const HEADER = ["ID", "Fecha", "Categoria", "Descripcion", "Monto"];
 
 const COLOR_ENCABEZADO = { red: 0.16, green: 0.32, blue: 0.28 };
 const COLOR_DATOS = { red: 1, green: 1, blue: 1 };
@@ -85,26 +85,36 @@ async function formatearHoja(sheetsClient: SheetsClient, spreadsheetId: string, 
             fields: "userEnteredFormat(backgroundColor,textFormat)",
           },
         },
+        // ID como numero entero, centrado.
+        {
+          repeatCell: {
+            range: { sheetId, startRowIndex: 1, startColumnIndex: 0, endColumnIndex: 1 },
+            cell: {
+              userEnteredFormat: { numberFormat: { type: "NUMBER", pattern: "0" }, horizontalAlignment: "CENTER" },
+            },
+            fields: "userEnteredFormat(numberFormat,horizontalAlignment)",
+          },
+        },
         // Limpiar cualquier formato numerico previo en Categoria/Descripcion.
         {
           repeatCell: {
-            range: { sheetId, startRowIndex: 1, startColumnIndex: 1, endColumnIndex: 3 },
+            range: { sheetId, startRowIndex: 1, startColumnIndex: 2, endColumnIndex: 4 },
             cell: { userEnteredFormat: { numberFormat: { type: "TEXT" } } },
             fields: "userEnteredFormat.numberFormat",
           },
         },
-        // Formato de fecha en la columna A.
+        // Formato de fecha en la columna Fecha.
         {
           repeatCell: {
-            range: { sheetId, startRowIndex: 1, startColumnIndex: 0, endColumnIndex: 1 },
+            range: { sheetId, startRowIndex: 1, startColumnIndex: 1, endColumnIndex: 2 },
             cell: { userEnteredFormat: { numberFormat: { type: "DATE", pattern: "dd/mm/yyyy" } } },
             fields: "userEnteredFormat.numberFormat",
           },
         },
-        // Formato de moneda en la columna D (Monto).
+        // Formato de moneda en la columna Monto.
         {
           repeatCell: {
-            range: { sheetId, startRowIndex: 1, startColumnIndex: 3, endColumnIndex: 4 },
+            range: { sheetId, startRowIndex: 1, startColumnIndex: 4, endColumnIndex: 5 },
             cell: { userEnteredFormat: { numberFormat: { type: "CURRENCY", pattern: '$#,##0' } } },
             fields: "userEnteredFormat.numberFormat",
           },
@@ -132,12 +142,12 @@ async function ensureHeader(sheetsClient: SheetsClient) {
   const spreadsheetId = env.GOOGLE_SHEET_ID();
   const res = await sheetsClient.spreadsheets.values.get({
     spreadsheetId,
-    range: `${SHEET_NAME}!A1:D1`,
+    range: `${SHEET_NAME}!A1:E1`,
   });
   if (!res.data.values || res.data.values.length === 0) {
     await sheetsClient.spreadsheets.values.update({
       spreadsheetId,
-      range: `${SHEET_NAME}!A1:D1`,
+      range: `${SHEET_NAME}!A1:E1`,
       valueInputOption: "RAW",
       requestBody: { values: [HEADER] },
     });
@@ -146,7 +156,7 @@ async function ensureHeader(sheetsClient: SheetsClient) {
   }
 }
 
-// Extrae el numero de la primera fila de un rango tipo "Gastos!A5:D5".
+// Extrae el numero de la primera fila de un rango tipo "Gastos!A5:E5".
 function primeraFilaDeRango(updatedRange: string | null | undefined): number | null {
   const match = updatedRange?.match(/![A-Z]+(\d+):/);
   return match ? Number(match[1]) : null;
@@ -167,7 +177,7 @@ async function formatearFilaDeGasto(
         // de arriba (encabezado o separador), hay que devolverla a la normal.
         {
           repeatCell: {
-            range: { sheetId, startRowIndex: filaIndex0, endRowIndex: filaIndex0 + 1, startColumnIndex: 0, endColumnIndex: 4 },
+            range: { sheetId, startRowIndex: filaIndex0, endRowIndex: filaIndex0 + 1, startColumnIndex: 0, endColumnIndex: 5 },
             cell: {
               userEnteredFormat: {
                 backgroundColor: COLOR_DATOS,
@@ -181,13 +191,22 @@ async function formatearFilaDeGasto(
         {
           repeatCell: {
             range: { sheetId, startRowIndex: filaIndex0, endRowIndex: filaIndex0 + 1, startColumnIndex: 0, endColumnIndex: 1 },
+            cell: {
+              userEnteredFormat: { numberFormat: { type: "NUMBER", pattern: "0" }, horizontalAlignment: "CENTER" },
+            },
+            fields: "userEnteredFormat(numberFormat,horizontalAlignment)",
+          },
+        },
+        {
+          repeatCell: {
+            range: { sheetId, startRowIndex: filaIndex0, endRowIndex: filaIndex0 + 1, startColumnIndex: 1, endColumnIndex: 2 },
             cell: { userEnteredFormat: { numberFormat: { type: "DATE", pattern: "dd/mm/yyyy" } } },
             fields: "userEnteredFormat.numberFormat",
           },
         },
         {
           repeatCell: {
-            range: { sheetId, startRowIndex: filaIndex0, endRowIndex: filaIndex0 + 1, startColumnIndex: 3, endColumnIndex: 4 },
+            range: { sheetId, startRowIndex: filaIndex0, endRowIndex: filaIndex0 + 1, startColumnIndex: 4, endColumnIndex: 5 },
             cell: { userEnteredFormat: { numberFormat: { type: "CURRENCY", pattern: "$#,##0" } } },
             fields: "userEnteredFormat.numberFormat",
           },
@@ -208,10 +227,10 @@ async function agregarSeparadorDeMes(
 
   const appendRes = await sheetsClient.spreadsheets.values.append({
     spreadsheetId,
-    range: `${SHEET_NAME}!A:D`,
+    range: `${SHEET_NAME}!A:E`,
     valueInputOption: "RAW", // evita que Sheets interprete la etiqueta como fecha
     insertDataOption: "INSERT_ROWS",
-    requestBody: { values: [[etiqueta, "", "", ""]] },
+    requestBody: { values: [[etiqueta, "", "", "", ""]] },
   });
 
   const numeroFila = primeraFilaDeRango(appendRes.data.updates?.updatedRange);
@@ -224,13 +243,13 @@ async function agregarSeparadorDeMes(
       requests: [
         {
           mergeCells: {
-            range: { sheetId, startRowIndex: filaIndex0, endRowIndex: filaIndex0 + 1, startColumnIndex: 0, endColumnIndex: 4 },
+            range: { sheetId, startRowIndex: filaIndex0, endRowIndex: filaIndex0 + 1, startColumnIndex: 0, endColumnIndex: 5 },
             mergeType: "MERGE_ALL",
           },
         },
         {
           repeatCell: {
-            range: { sheetId, startRowIndex: filaIndex0, endRowIndex: filaIndex0 + 1, startColumnIndex: 0, endColumnIndex: 4 },
+            range: { sheetId, startRowIndex: filaIndex0, endRowIndex: filaIndex0 + 1, startColumnIndex: 0, endColumnIndex: 5 },
             cell: {
               userEnteredFormat: {
                 backgroundColor: COLOR_SEPARADOR,
@@ -247,67 +266,114 @@ async function agregarSeparadorDeMes(
   });
 }
 
-// Mes (YYYY-MM) de la ultima fila de datos real cargada (ignora separadores).
-async function obtenerUltimoMesCargado(sheetsClient: SheetsClient, spreadsheetId: string): Promise<string | null> {
+// Indices (dentro de `filas`, un array que arranca en la fila 2 de la hoja)
+// de las filas que son gastos reales, ignorando separadores de mes (que
+// tienen texto en la columna ID en vez de un numero).
+function indicesDeGastos(filas: unknown[][]): number[] {
+  const indices: number[] = [];
+  filas.forEach((fila, i) => {
+    if (typeof fila[0] === "number") indices.push(i);
+  });
+  return indices;
+}
+
+function filaAGasto(fila: unknown[]): FilaGasto {
+  return {
+    id: Number(fila[0]),
+    fecha: fechaDesdeSerialDeSheets(Number(fila[1])),
+    categoria: String(fila[2] ?? ""),
+    descripcion: String(fila[3] ?? ""),
+    monto: Number(fila[4]) || 0,
+  };
+}
+
+// Mes (YYYY-MM) del ultimo gasto real cargado (ignora separadores), y el
+// mayor ID usado hasta ahora (para asignarle el siguiente al nuevo gasto).
+async function obtenerUltimoMesYUltimoId(
+  sheetsClient: SheetsClient,
+  spreadsheetId: string
+): Promise<{ ultimoMes: string | null; ultimoId: number }> {
   const res = await sheetsClient.spreadsheets.values.get({
     spreadsheetId,
-    range: `${SHEET_NAME}!A2:A`,
+    range: `${SHEET_NAME}!A2:B`,
     valueRenderOption: "UNFORMATTED_VALUE",
   });
   const filas = res.data.values ?? [];
+
+  let ultimoId = 0;
+  for (const fila of filas) {
+    const id = fila[0];
+    if (typeof id === "number" && id > ultimoId) ultimoId = id;
+  }
+
+  let ultimoMes: string | null = null;
   for (let i = filas.length - 1; i >= 0; i--) {
-    const valor = filas[i]?.[0];
-    if (typeof valor === "number") {
-      const fecha = fechaDesdeSerialDeSheets(valor);
-      return `${fecha.getUTCFullYear()}-${String(fecha.getUTCMonth() + 1).padStart(2, "0")}`;
+    const fila = filas[i];
+    if (typeof fila[0] === "number") {
+      const fecha = fechaDesdeSerialDeSheets(Number(fila[1]));
+      ultimoMes = `${fecha.getUTCFullYear()}-${String(fecha.getUTCMonth() + 1).padStart(2, "0")}`;
+      break;
     }
   }
-  return null;
+
+  return { ultimoMes, ultimoId };
 }
 
-async function agregarUnGasto(sheetsClient: SheetsClient, spreadsheetId: string, sheetId: number, gasto: NuevoGasto) {
+async function agregarUnGasto(
+  sheetsClient: SheetsClient,
+  spreadsheetId: string,
+  sheetId: number,
+  gasto: NuevoGasto
+): Promise<FilaGasto> {
   const mesDelGasto = gasto.fecha.slice(0, 7);
-  const ultimoMes = await obtenerUltimoMesCargado(sheetsClient, spreadsheetId);
+  const { ultimoMes, ultimoId } = await obtenerUltimoMesYUltimoId(sheetsClient, spreadsheetId);
   if (ultimoMes !== mesDelGasto) {
     await agregarSeparadorDeMes(sheetsClient, spreadsheetId, sheetId, gasto.fecha);
   }
 
+  const id = ultimoId + 1;
   const appendRes = await sheetsClient.spreadsheets.values.append({
     spreadsheetId,
-    range: `${SHEET_NAME}!A:D`,
+    range: `${SHEET_NAME}!A:E`,
     valueInputOption: "USER_ENTERED",
     insertDataOption: "INSERT_ROWS",
-    requestBody: { values: [[gasto.fecha, gasto.categoria, gasto.descripcion, gasto.monto]] },
+    requestBody: { values: [[id, gasto.fecha, gasto.categoria, gasto.descripcion, gasto.monto]] },
   });
 
   const numeroFila = primeraFilaDeRango(appendRes.data.updates?.updatedRange);
   if (numeroFila != null) {
     await formatearFilaDeGasto(sheetsClient, spreadsheetId, sheetId, numeroFila);
   }
+
+  return { id, fecha: new Date(`${gasto.fecha}T00:00:00Z`), categoria: gasto.categoria, descripcion: gasto.descripcion, monto: gasto.monto };
 }
 
-export async function agregarGasto(gasto: NuevoGasto): Promise<void> {
+export async function agregarGasto(gasto: NuevoGasto): Promise<FilaGasto> {
   const sheetsClient = await getSheetsClient();
   await ensureHeader(sheetsClient);
   const spreadsheetId = env.GOOGLE_SHEET_ID();
   const sheetId = await obtenerSheetId(sheetsClient, spreadsheetId);
-  await agregarUnGasto(sheetsClient, spreadsheetId, sheetId, gasto);
+  return agregarUnGasto(sheetsClient, spreadsheetId, sheetId, gasto);
 }
 
-// Carga varios gastos de una (por ejemplo, un import historico). Los inserta
-// en orden, agregando separadores de mes donde corresponda.
-export async function agregarGastos(gastos: NuevoGasto[]): Promise<void> {
-  if (gastos.length === 0) return;
+// Carga varios gastos de una (por ejemplo, un import historico, o varios
+// gastos mencionados en el mismo mensaje). Los inserta en orden, agregando
+// separadores de mes donde corresponda, y devuelve cada uno con su ID.
+export async function agregarGastos(gastos: NuevoGasto[]): Promise<FilaGasto[]> {
+  if (gastos.length === 0) return [];
   const sheetsClient = await getSheetsClient();
   await ensureHeader(sheetsClient);
   const spreadsheetId = env.GOOGLE_SHEET_ID();
   const sheetId = await obtenerSheetId(sheetsClient, spreadsheetId);
+  const resultados: FilaGasto[] = [];
   for (const gasto of gastos) {
-    await agregarUnGasto(sheetsClient, spreadsheetId, sheetId, gasto);
+    resultados.push(await agregarUnGasto(sheetsClient, spreadsheetId, sheetId, gasto));
   }
+  return resultados;
 }
 
 export type FilaGasto = {
+  id: number;
   fecha: Date;
   categoria: string;
   descripcion: string;
@@ -324,39 +390,13 @@ export async function leerGastos(): Promise<FilaGasto[]> {
   const sheetsClient = await getSheetsClient();
   const res = await sheetsClient.spreadsheets.values.get({
     spreadsheetId: env.GOOGLE_SHEET_ID(),
-    range: `${SHEET_NAME}!A2:D`,
+    range: `${SHEET_NAME}!A2:E`,
     valueRenderOption: "UNFORMATTED_VALUE",
   });
   const filas = res.data.values ?? [];
-  // Las filas separadoras de mes tienen texto en la columna A en vez de un
-  // numero serial de fecha, asi que quedan afuera solas con este filtro.
-  return filas
-    .filter((fila) => typeof fila[0] === "number")
-    .map((fila) => ({
-      fecha: fechaDesdeSerialDeSheets(Number(fila[0])),
-      categoria: String(fila[1] ?? ""),
-      descripcion: String(fila[2] ?? ""),
-      monto: Number(fila[3]) || 0,
-    }));
-}
-
-// Indices (dentro de `filas`, un array que arranca en la fila 2 de la hoja)
-// de las filas que son gastos reales, ignorando separadores de mes.
-function indicesDeGastos(filas: unknown[][]): number[] {
-  const indices: number[] = [];
-  filas.forEach((fila, i) => {
-    if (typeof fila[0] === "number") indices.push(i);
-  });
-  return indices;
-}
-
-function filaAGasto(fila: unknown[]): FilaGasto {
-  return {
-    fecha: fechaDesdeSerialDeSheets(Number(fila[0])),
-    categoria: String(fila[1] ?? ""),
-    descripcion: String(fila[2] ?? ""),
-    monto: Number(fila[3]) || 0,
-  };
+  // Las filas separadoras de mes tienen texto en la columna ID en vez de un
+  // numero, asi que quedan afuera solas con este filtro.
+  return filas.filter((fila) => typeof fila[0] === "number").map(filaAGasto);
 }
 
 export async function contarGastos(): Promise<number> {
@@ -376,41 +416,6 @@ export async function previsualizarEnRango(inicio: Date, fin: Date): Promise<Fil
   return gastos.filter((g) => g.fecha >= inicio && g.fecha < fin);
 }
 
-export async function borrarGastosEnRango(inicio: Date, fin: Date): Promise<FilaGasto[]> {
-  const sheetsClient = await getSheetsClient();
-  const spreadsheetId = env.GOOGLE_SHEET_ID();
-  const res = await sheetsClient.spreadsheets.values.get({
-    spreadsheetId,
-    range: `${SHEET_NAME}!A2:D`,
-    valueRenderOption: "UNFORMATTED_VALUE",
-  });
-  const filas = res.data.values ?? [];
-  const aBorrar: number[] = [];
-  const resultado: FilaGasto[] = [];
-  filas.forEach((fila, i) => {
-    if (typeof fila[0] !== "number") return;
-    const gasto = filaAGasto(fila);
-    if (gasto.fecha >= inicio && gasto.fecha < fin) {
-      aBorrar.push(i);
-      resultado.push(gasto);
-    }
-  });
-  if (aBorrar.length === 0) return [];
-
-  const sheetId = await obtenerSheetId(sheetsClient, spreadsheetId);
-  const requests = aBorrar
-    .slice()
-    .sort((a, b) => b - a)
-    .map((i) => ({
-      deleteDimension: {
-        range: { sheetId, dimension: "ROWS" as const, startIndex: i + 1, endIndex: i + 2 },
-      },
-    }));
-  await sheetsClient.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests } });
-
-  return resultado;
-}
-
 export async function previsualizarCoincidencia(texto: string): Promise<FilaGasto | null> {
   const gastos = await leerGastos();
   const textoLower = texto.toLowerCase();
@@ -423,20 +428,21 @@ export async function previsualizarCoincidencia(texto: string): Promise<FilaGast
   return null;
 }
 
-export async function borrarUltimosGastos(cantidad: number): Promise<FilaGasto[]> {
-  const sheetsClient = await getSheetsClient();
-  const spreadsheetId = env.GOOGLE_SHEET_ID();
-  const res = await sheetsClient.spreadsheets.values.get({
-    spreadsheetId,
-    range: `${SHEET_NAME}!A2:D`,
-    valueRenderOption: "UNFORMATTED_VALUE",
-  });
-  const filas = res.data.values ?? [];
-  const aBorrar = indicesDeGastos(filas).slice(-cantidad);
-  if (aBorrar.length === 0) return [];
+export async function previsualizarPorIds(ids: number[]): Promise<FilaGasto[]> {
+  const gastos = await leerGastos();
+  const idsSet = new Set(ids);
+  return gastos.filter((g) => idsSet.has(g.id));
+}
 
+async function borrarFilasPorIndices(
+  sheetsClient: SheetsClient,
+  spreadsheetId: string,
+  filas: unknown[][],
+  indices: number[]
+): Promise<FilaGasto[]> {
+  if (indices.length === 0) return [];
   const sheetId = await obtenerSheetId(sheetsClient, spreadsheetId);
-  const requests = aBorrar
+  const requests = indices
     .slice()
     .sort((a, b) => b - a) // de abajo hacia arriba, para no correr los indices restantes
     .map((i) => ({
@@ -445,8 +451,36 @@ export async function borrarUltimosGastos(cantidad: number): Promise<FilaGasto[]
       },
     }));
   await sheetsClient.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests } });
+  return indices.map((i) => filaAGasto(filas[i]));
+}
 
-  return aBorrar.map((i) => filaAGasto(filas[i]));
+export async function borrarGastosEnRango(inicio: Date, fin: Date): Promise<FilaGasto[]> {
+  const sheetsClient = await getSheetsClient();
+  const spreadsheetId = env.GOOGLE_SHEET_ID();
+  const res = await sheetsClient.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${SHEET_NAME}!A2:E`,
+    valueRenderOption: "UNFORMATTED_VALUE",
+  });
+  const filas = res.data.values ?? [];
+  const indices = indicesDeGastos(filas).filter((i) => {
+    const g = filaAGasto(filas[i]);
+    return g.fecha >= inicio && g.fecha < fin;
+  });
+  return borrarFilasPorIndices(sheetsClient, spreadsheetId, filas, indices);
+}
+
+export async function borrarUltimosGastos(cantidad: number): Promise<FilaGasto[]> {
+  const sheetsClient = await getSheetsClient();
+  const spreadsheetId = env.GOOGLE_SHEET_ID();
+  const res = await sheetsClient.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${SHEET_NAME}!A2:E`,
+    valueRenderOption: "UNFORMATTED_VALUE",
+  });
+  const filas = res.data.values ?? [];
+  const indices = indicesDeGastos(filas).slice(-cantidad);
+  return borrarFilasPorIndices(sheetsClient, spreadsheetId, filas, indices);
 }
 
 export async function borrarGastoPorTexto(texto: string): Promise<FilaGasto | null> {
@@ -454,33 +488,37 @@ export async function borrarGastoPorTexto(texto: string): Promise<FilaGasto | nu
   const spreadsheetId = env.GOOGLE_SHEET_ID();
   const res = await sheetsClient.spreadsheets.values.get({
     spreadsheetId,
-    range: `${SHEET_NAME}!A2:D`,
+    range: `${SHEET_NAME}!A2:E`,
     valueRenderOption: "UNFORMATTED_VALUE",
   });
   const filas = res.data.values ?? [];
   const textoLower = texto.toLowerCase();
   let indice = -1;
   for (const i of indicesDeGastos(filas).reverse()) {
-    const categoria = String(filas[i][1] ?? "").toLowerCase();
-    const descripcion = String(filas[i][2] ?? "").toLowerCase();
+    const categoria = String(filas[i][2] ?? "").toLowerCase();
+    const descripcion = String(filas[i][3] ?? "").toLowerCase();
     if (categoria.includes(textoLower) || descripcion.includes(textoLower)) {
       indice = i;
       break;
     }
   }
   if (indice === -1) return null;
+  const borrados = await borrarFilasPorIndices(sheetsClient, spreadsheetId, filas, [indice]);
+  return borrados[0] ?? null;
+}
 
-  const sheetId = await obtenerSheetId(sheetsClient, spreadsheetId);
-  await sheetsClient.spreadsheets.batchUpdate({
+export async function borrarGastosPorIds(ids: number[]): Promise<FilaGasto[]> {
+  const sheetsClient = await getSheetsClient();
+  const spreadsheetId = env.GOOGLE_SHEET_ID();
+  const res = await sheetsClient.spreadsheets.values.get({
     spreadsheetId,
-    requestBody: {
-      requests: [
-        { deleteDimension: { range: { sheetId, dimension: "ROWS", startIndex: indice + 1, endIndex: indice + 2 } } },
-      ],
-    },
+    range: `${SHEET_NAME}!A2:E`,
+    valueRenderOption: "UNFORMATTED_VALUE",
   });
-
-  return filaAGasto(filas[indice]);
+  const filas = res.data.values ?? [];
+  const idsSet = new Set(ids);
+  const indices = indicesDeGastos(filas).filter((i) => idsSet.has(Number(filas[i][0])));
+  return borrarFilasPorIndices(sheetsClient, spreadsheetId, filas, indices);
 }
 
 // Borra todas las filas de datos (gastos + separadores de mes) y las
@@ -516,12 +554,31 @@ export async function borrarTodosLosGastos(): Promise<number> {
 
 export type CambiosGasto = Partial<Pick<NuevoGasto, "fecha" | "monto" | "categoria" | "descripcion">>;
 
+function aplicarCambios(fila: unknown[], cambios: CambiosGasto): { fila: unknown[]; resultado: FilaGasto } {
+  const id = Number(fila[0]);
+  const fechaActual = fechaDesdeSerialDeSheets(Number(fila[1])).toISOString().slice(0, 10);
+  const fechaFinal = cambios.fecha ?? fechaActual;
+  const categoriaFinal = cambios.categoria ?? String(fila[2] ?? "");
+  const descripcionFinal = cambios.descripcion ?? String(fila[3] ?? "");
+  const montoFinal = cambios.monto ?? (Number(fila[4]) || 0);
+  return {
+    fila: [id, fechaFinal, categoriaFinal, descripcionFinal, montoFinal],
+    resultado: {
+      id,
+      fecha: new Date(`${fechaFinal}T00:00:00Z`),
+      categoria: categoriaFinal,
+      descripcion: descripcionFinal,
+      monto: montoFinal,
+    },
+  };
+}
+
 export async function editarUltimoGasto(cambios: CambiosGasto): Promise<FilaGasto | null> {
   const sheetsClient = await getSheetsClient();
   const spreadsheetId = env.GOOGLE_SHEET_ID();
   const res = await sheetsClient.spreadsheets.values.get({
     spreadsheetId,
-    range: `${SHEET_NAME}!A2:D`,
+    range: `${SHEET_NAME}!A2:E`,
     valueRenderOption: "UNFORMATTED_VALUE",
   });
   const filas = res.data.values ?? [];
@@ -531,29 +588,54 @@ export async function editarUltimoGasto(cambios: CambiosGasto): Promise<FilaGast
   }
   if (indice < 0) return null;
 
-  const ultima = filas[indice];
   const numeroFila = indice + 2; // fila 1 = encabezado, filas[0] = fila 2, etc.
-
-  const fechaActual = fechaDesdeSerialDeSheets(Number(ultima[0])).toISOString().slice(0, 10);
-  const fechaFinal = cambios.fecha ?? fechaActual;
-  const categoriaFinal = cambios.categoria ?? String(ultima[1] ?? "");
-  const descripcionFinal = cambios.descripcion ?? String(ultima[2] ?? "");
-  const montoFinal = cambios.monto ?? (Number(ultima[3]) || 0);
+  const { fila, resultado } = aplicarCambios(filas[indice], cambios);
 
   await sheetsClient.spreadsheets.values.update({
     spreadsheetId,
-    range: `${SHEET_NAME}!A${numeroFila}:D${numeroFila}`,
+    range: `${SHEET_NAME}!A${numeroFila}:E${numeroFila}`,
     valueInputOption: "USER_ENTERED",
-    requestBody: { values: [[fechaFinal, categoriaFinal, descripcionFinal, montoFinal]] },
+    requestBody: { values: [fila] },
   });
 
   const sheetId = await obtenerSheetId(sheetsClient, spreadsheetId);
   await formatearFilaDeGasto(sheetsClient, spreadsheetId, sheetId, numeroFila);
 
-  return {
-    fecha: new Date(`${fechaFinal}T00:00:00Z`),
-    categoria: categoriaFinal,
-    descripcion: descripcionFinal,
-    monto: montoFinal,
-  };
+  return resultado;
+}
+
+export async function editarGastosPorIds(ids: number[], cambios: CambiosGasto): Promise<FilaGasto[]> {
+  const sheetsClient = await getSheetsClient();
+  const spreadsheetId = env.GOOGLE_SHEET_ID();
+  const res = await sheetsClient.spreadsheets.values.get({
+    spreadsheetId,
+    range: `${SHEET_NAME}!A2:E`,
+    valueRenderOption: "UNFORMATTED_VALUE",
+  });
+  const filas = res.data.values ?? [];
+  const idsSet = new Set(ids);
+  const indices = indicesDeGastos(filas).filter((i) => idsSet.has(Number(filas[i][0])));
+  if (indices.length === 0) return [];
+
+  const sheetId = await obtenerSheetId(sheetsClient, spreadsheetId);
+  const resultados: FilaGasto[] = [];
+  const requestsDeValores: Array<{ range: string; values: unknown[][] }> = [];
+
+  for (const indice of indices) {
+    const numeroFila = indice + 2;
+    const { fila, resultado } = aplicarCambios(filas[indice], cambios);
+    requestsDeValores.push({ range: `${SHEET_NAME}!A${numeroFila}:E${numeroFila}`, values: [fila] });
+    resultados.push(resultado);
+  }
+
+  await sheetsClient.spreadsheets.values.batchUpdate({
+    spreadsheetId,
+    requestBody: { valueInputOption: "USER_ENTERED", data: requestsDeValores },
+  });
+
+  for (const indice of indices) {
+    await formatearFilaDeGasto(sheetsClient, spreadsheetId, sheetId, indice + 2);
+  }
+
+  return resultados;
 }

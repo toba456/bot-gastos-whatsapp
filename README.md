@@ -4,14 +4,15 @@ Asistente personal de WhatsApp para registrar gastos hablando o escribiendo en l
 
 ## Qué hace hoy
 
-- **Cargar gastos** por texto libre, uno o varios en el mismo mensaje.
-  > "gasté 5000 en el súper"
+- **Cargar gastos** por texto libre, uno o varios en el mismo mensaje. Cada gasto se guarda con un **ID único** (columna `ID`, antes de `Fecha`), que el bot muestra en la confirmación y en los listados — sirve para referenciar ese gasto puntual después.
+  > "gasté 5000 en el súper" → responde con `#14 — Comida — $5000 — súper`
   > "gasté 300 en el kiosco, 8000 en el cine y 50000 en un pantalón"
-- **Editar** el último gasto cargado sin borrarlo.
-  > "en realidad fueron 4000"
-  > "cambiá la categoría a Transporte"
+- **Editar** un gasto sin borrarlo: el último cargado, o uno puntual por ID.
+  > "en realidad fueron 4000" (edita el último)
+  > "el gasto 12 en realidad fue en Transporte" (edita ese ID puntual)
 - **Borrar** gastos, con confirmación previa (el bot muestra qué va a borrar y espera un "sí"/"no"):
   - el último, o los últimos N: *"borrá el último gasto"*, *"borrá los últimos 3"*
+  - por ID puntual, uno o varios: *"borrá el gasto 12"*, *"borrá los gastos 3, 5 y 8"*
   - uno puntual por descripción/categoría: *"borrá el gasto del kiosco"*
   - todos los de un período: *"borrá todos los gastos de hoy"*, *"borrá lo de agosto"*
   - absolutamente todo: *"borrá todo"*

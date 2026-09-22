@@ -112,7 +112,7 @@ export function textoListado(datos: { titulo: string; gastos: FilaGasto[]; total
   }
   const lineas = datos.gastos.map((g) => {
     const fechaCorta = formatearFechaCorta(g.fecha);
-    return `• ${fechaCorta} — ${g.categoria} — ${g.descripcion} — ${formatearPesos(g.monto)}`;
+    return `#${g.id} — ${fechaCorta} — ${g.categoria} — ${g.descripcion} — ${formatearPesos(g.monto)}`;
   });
   return [
     `📋 Gastos de ${datos.titulo}`,
