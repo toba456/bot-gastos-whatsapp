@@ -1,4 +1,5 @@
 import { leerGastos } from "@/lib/sheets";
+import { nombreMes } from "@/lib/meses";
 
 export type Periodo = "dia" | "semana" | "mes" | "anio";
 
@@ -11,14 +12,7 @@ export type Resumen = {
   porCategoria: Array<{ categoria: string; total: number }>;
 };
 
-const NOMBRES_MES = [
-  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
-];
-
-export function nombreMes(mes: number): string {
-  return NOMBRES_MES[mes - 1] ?? `Mes ${mes}`;
-}
+export { nombreMes };
 
 function formatearFechaCorta(d: Date): string {
   const dd = String(d.getUTCDate()).padStart(2, "0");
