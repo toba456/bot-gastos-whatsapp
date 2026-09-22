@@ -2,8 +2,6 @@
 
 Asistente personal de WhatsApp para registrar gastos hablando o escribiendo en lenguaje natural. Interpreta el mensaje con Gemini, lo guarda en una Google Sheet prolija, y responde confirmando. También arma resúmenes con gráfico, listados detallados, y permite editar o borrar lo cargado — todo por chat, sin abrir ninguna app.
 
-Ver [PROYECTO.md](./PROYECTO.md) para el plan original completo (objetivo, fases, decisiones de stack).
-
 ## Qué hace hoy
 
 - **Cargar gastos** por texto libre, uno o varios en el mismo mensaje.
@@ -154,10 +152,3 @@ Por eso `WHATSAPP_OWNER_NUMBER` tiene que cargarse en el **formato de marcado lo
 ## El "borrado con confirmación"
 
 Como no hay una base de datos aparte de la planilla, el estado de "hay un borrado pendiente de confirmar" se guarda en una pestaña oculta de la misma Google Sheet, llamada `_estado` (se crea sola). Cuando el bot te pregunta "¿confirmás?", tu próxima respuesta se interpreta primero como sí/no antes que como un mensaje normal; si no es ni sí ni no, te vuelve a mostrar la pregunta.
-
-## Roadmap (Fase 3, no implementada)
-
-- Carga de audio (Gemini transcribe + interpreta en la misma llamada).
-- Carga de imagen (tickets, capturas de transferencias).
-- Import de gastos históricos desde otra app (PDF/Excel exportado).
-- Automatización con Mercado Pago: investigar si hay forma oficial de leer los propios movimientos salientes vía API (la documentada es para negocios que *reciben* pagos, no para leer gastos propios como comprador).
