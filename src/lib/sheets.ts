@@ -22,6 +22,92 @@ export type NuevoGasto = {
   numero: string; // numero de WhatsApp de origen
 };
 
+export async function formatearPlanillaExistente(): Promise<void> {
+  const sheetsClient = await getSheetsClient();
+  const spreadsheetId = env.GOOGLE_SHEET_ID();
+  const sheetId = await obtenerSheetId(sheetsClient, spreadsheetId);
+  await formatearHoja(sheetsClient, spreadsheetId, sheetId);
+}
+
+async function obtenerSheetId(
+  sheetsClient: Awaited<ReturnType<typeof getSheetsClient>>,
+  spreadsheetId: string
+): Promise<number> {
+  const res = await sheetsClient.spreadsheets.get({ spreadsheetId });
+  const hoja = res.data.sheets?.find(
+    (s) => s.properties?.title?.toLowerCase() === SHEET_NAME.toLowerCase()
+  );
+  if (hoja?.properties?.sheetId == null) {
+    throw new Error(`No se encontro la hoja "${SHEET_NAME}" en la planilla`);
+  }
+  return hoja.properties.sheetId;
+}
+
+async function formatearHoja(
+  sheetsClient: Awaited<ReturnType<typeof getSheetsClient>>,
+  spreadsheetId: string,
+  sheetId: number
+) {
+  await sheetsClient.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [
+        // Encabezado en negrita, con fondo y texto blanco.
+        {
+          repeatCell: {
+            range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: HEADER.length },
+            cell: {
+              userEnteredFormat: {
+                backgroundColor: { red: 0.16, green: 0.32, blue: 0.28 },
+                textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } },
+                horizontalAlignment: "CENTER",
+              },
+            },
+            fields: "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)",
+          },
+        },
+        // Congelar la fila de encabezado.
+        {
+          updateSheetProperties: {
+            properties: { sheetId, gridProperties: { frozenRowCount: 1 } },
+            fields: "gridProperties.frozenRowCount",
+          },
+        },
+        // Formato de fecha en la columna A.
+        {
+          repeatCell: {
+            range: { sheetId, startRowIndex: 1, startColumnIndex: 0, endColumnIndex: 1 },
+            cell: { userEnteredFormat: { numberFormat: { type: "DATE", pattern: "dd/mm/yyyy" } } },
+            fields: "userEnteredFormat.numberFormat",
+          },
+        },
+        // Formato de moneda en la columna B (Monto).
+        {
+          repeatCell: {
+            range: { sheetId, startRowIndex: 1, startColumnIndex: 1, endColumnIndex: 2 },
+            cell: { userEnteredFormat: { numberFormat: { type: "CURRENCY", pattern: '$#,##0' } } },
+            fields: "userEnteredFormat.numberFormat",
+          },
+        },
+        // Ajustar el ancho de todas las columnas al contenido.
+        {
+          autoResizeDimensions: {
+            dimensions: { sheetId, dimension: "COLUMNS", startIndex: 0, endIndex: HEADER.length },
+          },
+        },
+        // Filtro en el encabezado para poder ordenar/filtrar facil.
+        {
+          setBasicFilter: {
+            filter: {
+              range: { sheetId, startRowIndex: 0, startColumnIndex: 0, endColumnIndex: HEADER.length },
+            },
+          },
+        },
+      ],
+    },
+  });
+}
+
 async function ensureHeader(sheetsClient: Awaited<ReturnType<typeof getSheetsClient>>) {
   const spreadsheetId = env.GOOGLE_SHEET_ID();
   const res = await sheetsClient.spreadsheets.values.get({
@@ -35,6 +121,8 @@ async function ensureHeader(sheetsClient: Awaited<ReturnType<typeof getSheetsCli
       valueInputOption: "RAW",
       requestBody: { values: [HEADER] },
     });
+    const sheetId = await obtenerSheetId(sheetsClient, spreadsheetId);
+    await formatearHoja(sheetsClient, spreadsheetId, sheetId);
   }
 }
 
