@@ -4,6 +4,7 @@ Asistente personal de WhatsApp para registrar gastos hablando o escribiendo en l
 
 ## Qué hace hoy
 
+- **Cargar por audio**: mandás una nota de voz con cualquier comando (cargar un gasto, pedir un resumen, borrar, editar) y se transcribe con Gemini y se procesa exactamente igual que si lo hubieras escrito.
 - **Cargar gastos** por texto libre, uno o varios en el mismo mensaje. Cada gasto se guarda con un **ID único** (columna `ID`, antes de `Fecha`), que el bot muestra en la confirmación y en los listados — sirve para referenciar ese gasto puntual después.
   > "gasté 5000 en el súper" → responde con `#14 — Comida — $5000 — súper`
   > "gasté 300 en el kiosco, 8000 en el cine y 50000 en un pantalón"
@@ -40,9 +41,12 @@ No hay base de datos tradicional: la planilla de Sheets *es* la base de datos, y
 ## Arquitectura
 
 ```
-WhatsApp (usuario) ──▶ Webhook (Vercel Function) ──▶ Gemini (clasifica el mensaje)
-                              │                              │
-                              │                              ▼
+WhatsApp (usuario) ──▶ Webhook (Vercel Function) ──▶ ¿audio? ──▶ Gemini (transcribe)
+                              │                                        │
+                              │                                        ▼
+                              │                              Gemini (clasifica el mensaje)
+                              │                                        │
+                              │                                        ▼
                               │                    { tipo: gasto | resumen |
                               │                      listado | editar | borrar }
                               ▼
@@ -54,7 +58,7 @@ WhatsApp (usuario) ──▶ Webhook (Vercel Function) ──▶ Gemini (clasifi
 Vercel Cron (diario) ──▶ /api/cron/resumen-mensual ──▶ (si es fin de mes) ──▶ WhatsApp
 ```
 
-Cada mensaje de texto entrante pasa primero por [`interpretarMensaje`](src/lib/interpretarMensaje.ts), que le pide a Gemini que lo clasifique en uno de 6 tipos (`gasto`, `resumen`, `listado`, `borrar`, `editar`, `otro`) usando un schema de `zod` con salida estructurada. El webhook (`src/app/api/whatsapp/webhook/route.ts`) ejecuta la acción correspondiente y siempre responde al número fijo `WHATSAPP_OWNER_NUMBER`, nunca al `from` del mensaje entrante (ver la nota sobre números de Argentina más abajo).
+Cada mensaje entrante pasa primero por [`interpretarMensaje`](src/lib/interpretarMensaje.ts), que le pide a Gemini que lo clasifique en uno de 6 tipos (`gasto`, `resumen`, `listado`, `borrar`, `editar`, `otro`) usando un schema de `zod` con salida estructurada. Si el mensaje es un audio, antes se descarga desde la API de WhatsApp y se transcribe con Gemini (`transcribirAudio`); el texto resultante entra al mismo pipeline que un mensaje escrito, sin distinción. El webhook (`src/app/api/whatsapp/webhook/route.ts`) ejecuta la acción correspondiente y siempre responde al número fijo `WHATSAPP_OWNER_NUMBER`, nunca al `from` del mensaje entrante (ver la nota sobre números de Argentina más abajo).
 
 ## Estructura del proyecto
 
@@ -65,10 +69,10 @@ src/
       whatsapp/webhook/route.ts   # Webhook de WhatsApp: GET (verificación) + POST (mensajes)
       cron/resumen-mensual/route.ts  # Cron diario, manda el resumen el ultimo dia del mes
   lib/
-    interpretarMensaje.ts   # Clasifica el mensaje con Gemini (gasto/resumen/listado/borrar/editar/otro)
+    interpretarMensaje.ts   # Clasifica el mensaje con Gemini (gasto/resumen/listado/borrar/editar/otro) y transcribe audios
     sheets.ts                # Todo el CRUD sobre la Google Sheet (leer, agregar, editar, borrar, formatear)
     resumen.ts                # Calculo de resumenes/listados por periodo (dia/semana/mes/anio)
-    whatsapp.ts               # Envio de mensajes de texto/imagen via WhatsApp Cloud API
+    whatsapp.ts               # Envio de mensajes de texto/imagen y descarga de audios via WhatsApp Cloud API
     estado.ts                 # Estado de confirmacion pendiente (pestaña oculta "_estado")
     categorias.ts             # Lista cerrada de categorias de gasto
     meses.ts / fechaArgentina.ts  # Helpers de fecha (nombres de mes, "hoy" en horario Argentina)
