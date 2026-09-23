@@ -17,12 +17,13 @@ import {
   type FilaGasto,
 } from "@/lib/sheets";
 import {
-  extraerMensajesDeTexto,
+  extraerMensajes,
+  descargarMedia,
   enviarMensajeTexto,
   enviarImagen,
   type WhatsAppWebhookPayload,
 } from "@/lib/whatsapp";
-import { interpretarMensaje, type MensajeInterpretado } from "@/lib/interpretarMensaje";
+import { interpretarMensaje, transcribirAudio, type MensajeInterpretado } from "@/lib/interpretarMensaje";
 import {
   calcularResumen,
   textoResumen,
@@ -234,10 +235,18 @@ async function ejecutarBorrado(accion: AccionBorrado) {
 // un formato que la lista de destinatarios permitidos no siempre reconoce.
 export async function POST(request: NextRequest) {
   const payload = (await request.json()) as WhatsAppWebhookPayload;
-  const mensajes = extraerMensajesDeTexto(payload);
+  const mensajes = extraerMensajes(payload);
 
-  for (const { texto } of mensajes) {
+  for (const mensaje of mensajes) {
     try {
+      let texto: string;
+      if (mensaje.tipo === "texto") {
+        texto = mensaje.texto;
+      } else {
+        const { buffer, mimeType } = await descargarMedia(mensaje.audioId);
+        texto = await transcribirAudio(buffer, mimeType);
+      }
+
       const pendiente = await leerConfirmacionPendiente();
       if (pendiente) {
         if (esConfirmacionAfirmativa(texto)) {

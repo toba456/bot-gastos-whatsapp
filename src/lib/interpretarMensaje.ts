@@ -1,4 +1,4 @@
-import { generateObject } from "ai";
+import { generateObject, generateText } from "ai";
 import { z } from "zod";
 import { CATEGORIAS } from "@/lib/categorias";
 import { hoyISOEnArgentina } from "@/lib/fechaArgentina";
@@ -108,6 +108,27 @@ export type MensajeInterpretado = z.infer<typeof mensajeSchema>;
 // Modelo servido a traves del Vercel AI Gateway.
 // Verificar el nombre vigente en https://ai.google.dev si Gemini renombra la serie Flash.
 const MODELO = "google/gemini-2.5-flash";
+
+// Transcripcion literal, sin interpretar: el texto resultante se procesa
+// despues con interpretarMensaje() igual que un mensaje de texto normal.
+export async function transcribirAudio(audio: Buffer, mimeType: string): Promise<string> {
+  const { text } = await generateText({
+    model: MODELO,
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: "Transcribí este audio en español tal cual lo que dice la persona, palabra por palabra. No interpretes ni resumas, devolvé solo el texto plano de lo que se escucha.",
+          },
+          { type: "file", data: audio, mediaType: mimeType },
+        ],
+      },
+    ],
+  });
+  return text.trim();
+}
 
 export async function interpretarMensaje(texto: string): Promise<MensajeInterpretado> {
   const hoy = hoyISOEnArgentina();
